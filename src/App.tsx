@@ -83,25 +83,34 @@ export default function App() {
       style={{
         background: "#06111f",
         minHeight: "100vh",
-        color: "#d8e6ff",
+        color: "#ffffff", // ✔ 전체 텍스트 흰색
         padding: "20px",
         fontFamily: "monospace",
+        display: "flex",
+        flexDirection: "column",
+        alignItems: "center",
       }}
     >
-      <h2>NEW SAN DIEGO INTELLIGENCE AGENCY</h2>
+      {/* 상단 타이틀 */}
+      <h2 style={{ color: "#ffffff", letterSpacing: "2px" }}>
+        NEW SAN DIEGO INTELLIGENCE AGENCY
+      </h2>
 
-      <div>
+      {/* 로그 */}
+      <div style={{ marginTop: "20px" }}>
         {visibleBootLines.map((line, index) => (
           <div key={index}>&gt; {line}</div>
         ))}
       </div>
 
+      {/* 입력 */}
       {bootStage === "ready" && (
         <div style={{ marginTop: "20px" }}>
           <input
             value={inputCode}
             onChange={(e) => setInputCode(e.target.value)}
             placeholder="코드 입력"
+            style={{ padding: "8px", marginRight: "10px" }}
           />
           <button onClick={handleSubmit}>확인</button>
         </div>
@@ -109,12 +118,46 @@ export default function App() {
 
       <div style={{ marginTop: "10px" }}>{statusText}</div>
 
+      {/* 결과 */}
       {selectedIntel && (
-        <div style={{ marginTop: "30px" }}>
+        <div style={{ marginTop: "30px", textAlign: "center" }}>
           <h3>{selectedIntel.title}</h3>
           <p>{selectedIntel.subtitle}</p>
           <img src={selectedIntel.image} style={{ width: "300px" }} />
           <pre>{selectedIntel.text}</pre>
+        </div>
+      )}
+
+      {/* 🔥 중앙 하단 로고 */}
+      {!selectedIntel && (
+        <div
+          style={{
+            marginTop: "80px",
+            display: "flex",
+            flexDirection: "column",
+            alignItems: "center",
+            opacity: 0.9,
+          }}
+        >
+          <img
+            src="/logo.png"
+            alt="agency logo"
+            style={{
+              width: "160px",
+              marginBottom: "20px",
+              filter: "brightness(1.2)",
+            }}
+          />
+
+          <div
+            style={{
+              fontSize: "14px",
+              letterSpacing: "3px",
+              color: "#bcd4ff",
+            }}
+          >
+            뉴 샌디에이고 데이터 체계
+          </div>
         </div>
       )}
     </div>

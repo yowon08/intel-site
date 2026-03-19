@@ -22,15 +22,14 @@ export const intelDatabase: IntelEntry[] = [
 - 필요 시 즉시 회수 작전 전환`,
   },
   {
-    code: "SANDSTORM",
-    title: "작전명 SANDSTORM",
+    code: "recycle",
+    title: "recycle 프로토콜",
     subtitle: "등급: TOP SECRET",
     image: "/intel/sample-operation.jpg",
-    text: `사막 지역 회수 작전 브리핑.
+    text: `치안국의 고위 간부들에 한하여 전달하라.
 
-예정 투입 인원: 4명
-예상 위협도: 높음
-위성 관측 결과, 목표 구역 주변 열신호 다수 포착.
+내용 : 난민촌 정리 중 발생한 시신들을 보관처리할 것.
+비고 : 소마의 보충.
 
 주의:
 무단 열람 시 추적 프로토콜이 자동 가동됩니다.`,
