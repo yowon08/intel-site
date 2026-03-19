@@ -140,7 +140,7 @@ export default function App() {
           }}
         >
           <img
-            src="/logo.png"
+            src="logo.png"
             alt="agency logo"
             style={{
               width: "160px",
