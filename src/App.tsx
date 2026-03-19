@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { intelDatabase } from "./data/intelDatabase";
 
 type IntelEntry = {
@@ -25,9 +25,6 @@ export default function App() {
   const [inputCode, setInputCode] = useState("");
   const [selectedIntel, setSelectedIntel] = useState<IntelEntry | null>(null);
   const [statusText, setStatusText] = useState("대기 중. 접근 코드를 입력하세요.");
-  const [isGlitching, setIsGlitching] = useState(false);
-  const [isDenied, setIsDenied] = useState(false);
-  const [isGranted, setIsGranted] = useState(false);
 
   useEffect(() => {
     let index = 0;
@@ -56,11 +53,6 @@ export default function App() {
     }));
   }, []);
 
-  const triggerGlitch = () => {
-    setIsGlitching(true);
-    setTimeout(() => setIsGlitching(false), 600);
-  };
-
   const handleSubmit = () => {
     const code = inputCode.trim().toUpperCase();
 
@@ -74,38 +66,36 @@ export default function App() {
     );
 
     if (found) {
-      setIsGranted(true);
-      triggerGlitch();
       setStatusText("접근 승인됨...");
 
       setTimeout(() => {
         setSelectedIntel(found);
-        setIsGranted(false);
         setStatusText(found.title + " 문서 열람 중");
       }, 500);
     } else {
       setSelectedIntel(null);
-      setIsDenied(true);
-      triggerGlitch();
       setStatusText("ACCESS DENIED");
-
-      setTimeout(() => setIsDenied(false), 1000);
     }
   };
 
   return (
-    <div style={{ background: "#06111f", minHeight: "100vh", color: "#d8e6ff", padding: "20px", fontFamily: "monospace" }}>
-      
+    <div
+      style={{
+        background: "#06111f",
+        minHeight: "100vh",
+        color: "#d8e6ff",
+        padding: "20px",
+        fontFamily: "monospace",
+      }}
+    >
       <h2>NEW SAN DIEGO INTELLIGENCE AGENCY</h2>
 
-      {/* 로그 */}
       <div>
         {visibleBootLines.map((line, index) => (
           <div key={index}>&gt; {line}</div>
         ))}
       </div>
 
-      {/* 입력 */}
       {bootStage === "ready" && (
         <div style={{ marginTop: "20px" }}>
           <input
@@ -119,7 +109,6 @@ export default function App() {
 
       <div style={{ marginTop: "10px" }}>{statusText}</div>
 
-      {/* 결과 */}
       {selectedIntel && (
         <div style={{ marginTop: "30px" }}>
           <h3>{selectedIntel.title}</h3>
