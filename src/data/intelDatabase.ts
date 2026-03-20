@@ -69,8 +69,8 @@ export const intelDatabase: IntelEntry[] = [
  {
   code: "S3CUR3D",
     title: "에우도라의 보고서",
-    subtitle: "등급: 레드",
-    image: "/intel/S3CUR3D",
+    subtitle: "등급: 옐로우",
+    image: "/intel/S3CUR3D.jpg",
     text: `결과 : 모든 데이터 확보 완료.
 
     ...스틱스에서 내린 작전 명령에 따라 에우도라의 요원 하나를 파견해서 임무를 완수했다.
