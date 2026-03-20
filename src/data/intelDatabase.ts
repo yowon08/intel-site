@@ -62,6 +62,9 @@ export const intelDatabase: IntelEntry[] = [
     작전 지역에선 예기치 못한 섬광이나 굉음이 발생할 수 있다.
     빛이나 소음에 예민한 요원은 투입하지 말 것.
 
+    pc기기 이용을 권장하나, 부득이하게 모바일 장치를 사용하게 될 경우
+    편이한 작동을 위해 가급적 가로 화면으로 고정한 채 사용하길 권장한다.
+
     https://intel-breach.vercel.app/
     `
     ,
