@@ -143,7 +143,7 @@ export const intelDatabase: IntelEntry[] = [
   code: "p0em",
     title: "엘리노어의 시",
     subtitle: "등급: 도시의 모든 당신들을 위하여.",
-    image: "/intel/poem.jpg",
+    image: "/intel/p0em.jpg",
     text: `날아라, 날아라, 날아라
 더 높이 날아라.
 
