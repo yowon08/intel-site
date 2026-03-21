@@ -10,6 +10,7 @@ type IntelEntry = {
 };
 
 type BootStage = "booting" | "ready";
+type ThemeMode = "normal" | "poem";
 
 type HistoryItem = {
   code: string;
@@ -19,6 +20,7 @@ type HistoryItem = {
 
 const HISTORY_STORAGE_KEY = "intel_terminal_history_v1";
 const MAX_HISTORY = 12;
+const POEM_CODE = "P0EM";
 
 const bootLines = [
   "보안성 검토 중...",
@@ -39,8 +41,12 @@ export default function App() {
   const [glitch, setGlitch] = useState(false);
   const [screenFlicker, setScreenFlicker] = useState(false);
   const [history, setHistory] = useState<HistoryItem[]>([]);
+  const [themeMode, setThemeMode] = useState<ThemeMode>("normal");
+  const [poemPulse, setPoemPulse] = useState(false);
+  const [poemSweep, setPoemSweep] = useState(false);
 
   const bgmRef = useRef<HTMLAudioElement | null>(null);
+  const poemBgmRef = useRef<HTMLAudioElement | null>(null);
   const bootSoundRef = useRef<HTMLAudioElement | null>(null);
   const openSoundRef = useRef<HTMLAudioElement | null>(null);
   const deniedSoundRef = useRef<HTMLAudioElement | null>(null);
@@ -54,6 +60,8 @@ export default function App() {
   const deniedLoopRef = useRef<number | null>(null);
   const typingTimeoutRef = useRef<number | null>(null);
   const openDocumentTimeoutRef = useRef<number | null>(null);
+  const poemPulseTimeoutRef = useRef<number | null>(null);
+  const poemSweepTimeoutRef = useRef<number | null>(null);
 
   const normalizedDatabase = useMemo(() => {
     return intelDatabase.map((item) => ({
@@ -75,17 +83,73 @@ export default function App() {
     }
   };
 
-  const startBgm = () => {
+  const startNormalBgm = () => {
     if (!bgmRef.current) return;
+
     try {
+      if (poemBgmRef.current) {
+        poemBgmRef.current.pause();
+        poemBgmRef.current.currentTime = 0;
+      }
+
       bgmRef.current.loop = true;
       if (bgmRef.current.paused) {
         bgmRef.current.currentTime = 0;
-        bgmRef.current.play().catch(() => {});
       }
+      bgmRef.current.play().catch(() => {});
     } catch {
       // ignore
     }
+  };
+
+  const startPoemBgm = () => {
+    if (!poemBgmRef.current) return;
+
+    try {
+      if (bgmRef.current) {
+        bgmRef.current.pause();
+        bgmRef.current.currentTime = 0;
+      }
+
+      poemBgmRef.current.loop = true;
+      if (poemBgmRef.current.paused) {
+        poemBgmRef.current.currentTime = 0;
+      }
+      poemBgmRef.current.play().catch(() => {});
+    } catch {
+      // ignore
+    }
+  };
+
+  const startBgmForMode = (mode: ThemeMode) => {
+    if (mode === "poem") {
+      startPoemBgm();
+    } else {
+      startNormalBgm();
+    }
+  };
+
+  const triggerPoemPulse = () => {
+    setPoemPulse(true);
+    setPoemSweep(true);
+
+    if (poemPulseTimeoutRef.current) {
+      window.clearTimeout(poemPulseTimeoutRef.current);
+    }
+
+    if (poemSweepTimeoutRef.current) {
+      window.clearTimeout(poemSweepTimeoutRef.current);
+    }
+
+    poemPulseTimeoutRef.current = window.setTimeout(() => {
+      setPoemPulse(false);
+      poemPulseTimeoutRef.current = null;
+    }, 700);
+
+    poemSweepTimeoutRef.current = window.setTimeout(() => {
+      setPoemSweep(false);
+      poemSweepTimeoutRef.current = null;
+    }, 900);
   };
 
   const playClick = () => {
@@ -226,6 +290,19 @@ export default function App() {
     setStatusText("접근 승인됨...");
     safePlay(openSoundRef.current, true);
 
+    const isPoem = entry.code.trim().toUpperCase() === POEM_CODE;
+
+    if (isPoem) {
+      setThemeMode("poem");
+      triggerPoemPulse();
+      startPoemBgm();
+    } else {
+      setThemeMode("normal");
+      setPoemPulse(false);
+      setPoemSweep(false);
+      startNormalBgm();
+    }
+
     openDocumentTimeoutRef.current = window.setTimeout(() => {
       setSelectedIntel(entry);
       setInputCode(entry.code.trim().toUpperCase());
@@ -243,6 +320,11 @@ export default function App() {
     bgmRef.current.loop = true;
     bgmRef.current.volume = 0.22;
     bgmRef.current.preload = "auto";
+
+    poemBgmRef.current = new Audio("/sounds/p0em.mp3");
+    poemBgmRef.current.loop = true;
+    poemBgmRef.current.volume = 0.26;
+    poemBgmRef.current.preload = "auto";
 
     bootSoundRef.current = new Audio("/sounds/boot.mp3");
     bootSoundRef.current.volume = 0.55;
@@ -275,7 +357,7 @@ export default function App() {
       if (hasUnlockedAudioRef.current) return;
       hasUnlockedAudioRef.current = true;
 
-      startBgm();
+      startBgmForMode(themeMode);
       safePlay(bootSoundRef.current, true);
     };
 
@@ -296,6 +378,16 @@ export default function App() {
         openDocumentTimeoutRef.current = null;
       }
 
+      if (poemPulseTimeoutRef.current) {
+        window.clearTimeout(poemPulseTimeoutRef.current);
+        poemPulseTimeoutRef.current = null;
+      }
+
+      if (poemSweepTimeoutRef.current) {
+        window.clearTimeout(poemSweepTimeoutRef.current);
+        poemSweepTimeoutRef.current = null;
+      }
+
       if (deniedLoopRef.current) {
         window.clearInterval(deniedLoopRef.current);
         deniedLoopRef.current = null;
@@ -303,6 +395,7 @@ export default function App() {
 
       [
         bgmRef.current,
+        poemBgmRef.current,
         bootSoundRef.current,
         openSoundRef.current,
         deniedSoundRef.current,
@@ -380,6 +473,7 @@ export default function App() {
     let cancelled = false;
     let charIndex = 0;
     const fullText = selectedIntel.text ?? "";
+    const isPoem = selectedIntel.code.trim().toUpperCase() === POEM_CODE;
 
     setDisplayedText("");
 
@@ -412,7 +506,7 @@ export default function App() {
         return;
       }
 
-      const nextDelay =
+      const baseDelay =
         currentChar === "\n"
           ? 55 + Math.random() * 35
           : currentChar === "." ||
@@ -422,10 +516,12 @@ export default function App() {
           ? 45 + Math.random() * 40
           : 14 + Math.random() * 18;
 
+      const nextDelay = isPoem ? baseDelay * 1.4 : baseDelay;
+
       typingTimeoutRef.current = window.setTimeout(typeNext, nextDelay);
     };
 
-    typingTimeoutRef.current = window.setTimeout(typeNext, 120);
+    typingTimeoutRef.current = window.setTimeout(typeNext, isPoem ? 180 : 120);
 
     return () => {
       cancelled = true;
@@ -437,7 +533,7 @@ export default function App() {
   }, [selectedIntel]);
 
   const handleSubmit = () => {
-    startBgm();
+    startBgmForMode(themeMode);
     playClick();
 
     const code = inputCode.trim().toUpperCase();
@@ -464,6 +560,10 @@ export default function App() {
         openDocumentTimeoutRef.current = null;
       }
 
+      setThemeMode("normal");
+      setPoemPulse(false);
+      setPoemSweep(false);
+      startNormalBgm();
       setSelectedIntel(null);
       setDisplayedText("");
       setStatusText("ACCESS DENIED");
@@ -472,7 +572,6 @@ export default function App() {
   };
 
   const handleReset = () => {
-    startBgm();
     playClick();
 
     if (typingTimeoutRef.current) {
@@ -485,6 +584,21 @@ export default function App() {
       openDocumentTimeoutRef.current = null;
     }
 
+    if (poemPulseTimeoutRef.current) {
+      window.clearTimeout(poemPulseTimeoutRef.current);
+      poemPulseTimeoutRef.current = null;
+    }
+
+    if (poemSweepTimeoutRef.current) {
+      window.clearTimeout(poemSweepTimeoutRef.current);
+      poemSweepTimeoutRef.current = null;
+    }
+
+    setThemeMode("normal");
+    setPoemPulse(false);
+    setPoemSweep(false);
+    startNormalBgm();
+
     stopDeniedAlarm();
     setSelectedIntel(null);
     setDisplayedText("");
@@ -495,7 +609,7 @@ export default function App() {
   };
 
   const handleOpenFromHistory = (code: string) => {
-    startBgm();
+    startBgmForMode(themeMode);
     playClick();
 
     const found = normalizedDatabase.find(
@@ -510,11 +624,15 @@ export default function App() {
     openDocument(found);
   };
 
+  const isPoemTheme = themeMode === "poem";
+
   return (
     <div
       style={{
         position: "relative",
-        background: "linear-gradient(180deg, #06111f 0%, #040b14 100%)",
+        background: isPoemTheme
+          ? "linear-gradient(180deg, #35172f 0%, #542445 26%, #7e3b6c 52%, #c26ea1 76%, #ffd2e9 100%)"
+          : "linear-gradient(180deg, #06111f 0%, #040b14 100%)",
         minHeight: "100vh",
         color: "#ffffff",
         padding: "20px 14px 40px",
@@ -524,8 +642,65 @@ export default function App() {
         alignItems: "center",
         boxSizing: "border-box",
         overflow: "hidden",
+        transition:
+          "background 0.9s ease, filter 0.4s ease, transform 0.25s ease",
+        filter: poemPulse
+          ? "brightness(1.25) saturate(1.28) hue-rotate(-10deg)"
+          : isPoemTheme
+          ? "brightness(1.08) saturate(1.12)"
+          : "none",
+        transform: poemPulse ? "scale(1.008)" : "scale(1)",
       }}
     >
+      <div
+        style={{
+          position: "absolute",
+          inset: 0,
+          pointerEvents: "none",
+          zIndex: 0,
+          opacity: isPoemTheme ? 0.3 : 0,
+          background: poemPulse
+            ? "radial-gradient(circle at 50% 45%, rgba(255,244,250,0.58) 0%, rgba(255,185,225,0.28) 24%, rgba(255,150,215,0.12) 45%, transparent 72%)"
+            : "radial-gradient(circle at 50% 45%, rgba(255,244,250,0.3) 0%, rgba(255,185,225,0.16) 28%, transparent 72%)",
+          transition: "opacity 0.35s ease, background 0.3s ease",
+        }}
+      />
+
+      <div
+        style={{
+          position: "absolute",
+          inset: 0,
+          pointerEvents: "none",
+          zIndex: 0,
+          opacity: poemSweep ? 0.42 : 0,
+          background:
+            "linear-gradient(90deg, transparent 0%, rgba(255,255,255,0.24) 18%, rgba(255,210,235,0.36) 48%, rgba(255,255,255,0.22) 78%, transparent 100%)",
+          transform: poemSweep
+            ? "translateX(0%) skewX(-14deg)"
+            : "translateX(-120%) skewX(-14deg)",
+          transition: "transform 0.8s ease, opacity 0.38s ease",
+        }}
+      />
+
+      <div
+        style={{
+          position: "absolute",
+          inset: 0,
+          pointerEvents: "none",
+          zIndex: 0,
+          opacity: isPoemTheme ? 0.14 : 0,
+          backgroundImage: `
+            radial-gradient(circle at 12% 20%, rgba(255,255,255,0.24) 0 2px, transparent 3px),
+            radial-gradient(circle at 85% 30%, rgba(255,220,238,0.22) 0 2px, transparent 3px),
+            radial-gradient(circle at 35% 78%, rgba(255,210,235,0.18) 0 2px, transparent 3px),
+            radial-gradient(circle at 70% 88%, rgba(255,240,248,0.14) 0 2px, transparent 3px)
+          `,
+          backgroundSize: "220px 220px, 260px 260px, 240px 240px, 300px 300px",
+          animation: isPoemTheme ? "petalFloat 12s linear infinite" : "none",
+          transition: "opacity 0.4s ease",
+        }}
+      />
+
       <div
         style={{
           position: "relative",
@@ -535,9 +710,15 @@ export default function App() {
           display: "flex",
           flexDirection: "column",
           alignItems: "center",
-          transform: glitch ? "translateX(2px)" : "none",
+          transform: glitch
+            ? `translateX(2px) ${poemPulse ? "skewX(-1deg)" : ""}`
+            : poemPulse
+            ? "translateY(-1px)"
+            : "none",
           filter: glitch
-            ? "contrast(1.22) brightness(1.08) saturate(0.95)"
+            ? isPoemTheme
+              ? "contrast(1.14) brightness(1.12) saturate(1.18)"
+              : "contrast(1.22) brightness(1.08) saturate(0.95)"
             : "none",
           opacity: screenFlicker ? 0.93 : 1,
           transition:
@@ -552,8 +733,13 @@ export default function App() {
             margin: "8px 0 0",
             fontSize: "clamp(18px, 4vw, 28px)",
             textShadow: glitch
-              ? "2px 0 rgba(255,0,70,0.35), -2px 0 rgba(80,180,255,0.35)"
+              ? isPoemTheme
+                ? "2px 0 rgba(255,180,220,0.45), -2px 0 rgba(255,245,250,0.32)"
+                : "2px 0 rgba(255,0,70,0.35), -2px 0 rgba(80,180,255,0.35)"
+              : isPoemTheme
+              ? "0 0 18px rgba(255, 210, 235, 0.2)"
               : "0 0 12px rgba(180,220,255,0.06)",
+            transition: "text-shadow 0.35s ease",
           }}
         >
           NEW SAN DIEGO INTELLIGENCE AGENCY
@@ -563,14 +749,22 @@ export default function App() {
           style={{
             marginTop: "22px",
             width: "100%",
-            background: "rgba(10, 20, 35, 0.7)",
-            border: "1px solid rgba(160, 200, 255, 0.18)",
+            background: isPoemTheme
+              ? "rgba(88, 40, 73, 0.72)"
+              : "rgba(10, 20, 35, 0.7)",
+            border: isPoemTheme
+              ? "1px solid rgba(255, 220, 240, 0.24)"
+              : "1px solid rgba(160, 200, 255, 0.18)",
             borderRadius: "12px",
             padding: "16px",
             boxSizing: "border-box",
-            boxShadow: "0 0 24px rgba(0, 0, 0, 0.28)",
+            boxShadow: isPoemTheme
+              ? "0 0 34px rgba(255, 180, 220, 0.12)"
+              : "0 0 24px rgba(0, 0, 0, 0.28)",
             position: "relative",
             overflow: "hidden",
+            transition:
+              "background 0.45s ease, border 0.45s ease, box-shadow 0.45s ease",
           }}
         >
           <div
@@ -578,17 +772,19 @@ export default function App() {
               position: "absolute",
               inset: 0,
               pointerEvents: "none",
-              background:
-                "linear-gradient(180deg, rgba(255,255,255,0.02) 0%, transparent 22%, transparent 78%, rgba(255,255,255,0.02) 100%)",
+              background: isPoemTheme
+                ? "linear-gradient(180deg, rgba(255,255,255,0.05) 0%, transparent 22%, transparent 78%, rgba(255,255,255,0.04) 100%)"
+                : "linear-gradient(180deg, rgba(255,255,255,0.02) 0%, transparent 22%, transparent 78%, rgba(255,255,255,0.02) 100%)",
             }}
           />
 
           <div
             style={{
-              color: "#9ec2ff",
+              color: isPoemTheme ? "#ffd4ea" : "#9ec2ff",
               fontSize: "13px",
               marginBottom: "10px",
               letterSpacing: "1px",
+              transition: "color 0.35s ease",
             }}
           >
             SYSTEM LOG
@@ -599,9 +795,12 @@ export default function App() {
               minHeight: "110px",
               lineHeight: "1.7",
               fontSize: "14px",
-              color: "#d7e6ff",
+              color: isPoemTheme ? "#fff2fa" : "#d7e6ff",
               wordBreak: "break-word",
-              textShadow: "0 0 10px rgba(125, 180, 255, 0.05)",
+              textShadow: isPoemTheme
+                ? "0 0 12px rgba(255, 220, 238, 0.08)"
+                : "0 0 10px rgba(125, 180, 255, 0.05)",
+              transition: "color 0.35s ease, text-shadow 0.35s ease",
             }}
           >
             {visibleBootLines.map((line, index) => (
@@ -626,7 +825,7 @@ export default function App() {
               onChange={(e) => setInputCode(e.target.value)}
               onFocus={() => {
                 playClick();
-                startBgm();
+                startBgmForMode(themeMode);
               }}
               onKeyDown={(e) => {
                 if (e.key === "Enter") handleSubmit();
@@ -638,14 +837,22 @@ export default function App() {
                 maxWidth: "420px",
                 padding: "12px 14px",
                 borderRadius: "10px",
-                border: "1px solid rgba(160, 200, 255, 0.2)",
-                background: "rgba(8, 18, 32, 0.95)",
+                border: isPoemTheme
+                  ? "1px solid rgba(255, 220, 240, 0.28)"
+                  : "1px solid rgba(160, 200, 255, 0.2)",
+                background: isPoemTheme
+                  ? "rgba(72, 31, 60, 0.95)"
+                  : "rgba(8, 18, 32, 0.95)",
                 color: "#ffffff",
                 outline: "none",
                 fontFamily: "monospace",
                 fontSize: "15px",
                 boxSizing: "border-box",
-                boxShadow: "inset 0 0 10px rgba(0,0,0,0.28)",
+                boxShadow: isPoemTheme
+                  ? "inset 0 0 16px rgba(255, 215, 236, 0.08)"
+                  : "inset 0 0 10px rgba(0,0,0,0.28)",
+                transition:
+                  "border 0.35s ease, background 0.35s ease, box-shadow 0.35s ease",
               }}
             />
 
@@ -654,13 +861,16 @@ export default function App() {
               style={{
                 padding: "12px 18px",
                 borderRadius: "10px",
-                border: "1px solid rgba(160, 200, 255, 0.25)",
-                background: "#0f2340",
+                border: isPoemTheme
+                  ? "1px solid rgba(255, 220, 240, 0.28)"
+                  : "1px solid rgba(160, 200, 255, 0.25)",
+                background: isPoemTheme ? "#8d4a79" : "#0f2340",
                 color: "#ffffff",
                 cursor: "pointer",
                 fontFamily: "monospace",
                 fontSize: "14px",
                 boxShadow: "0 0 12px rgba(0,0,0,0.18)",
+                transition: "background 0.35s ease, border 0.35s ease",
               }}
             >
               확인
@@ -672,13 +882,16 @@ export default function App() {
                 style={{
                   padding: "12px 18px",
                   borderRadius: "10px",
-                  border: "1px solid rgba(255, 255, 255, 0.15)",
-                  background: "#122b1d",
-                  color: "#dfffe8",
+                  border: isPoemTheme
+                    ? "1px solid rgba(255, 235, 245, 0.22)"
+                    : "1px solid rgba(255, 255, 255, 0.15)",
+                  background: isPoemTheme ? "#63324f" : "#122b1d",
+                  color: isPoemTheme ? "#fff0f8" : "#dfffe8",
                   cursor: "pointer",
                   fontFamily: "monospace",
                   fontSize: "14px",
                   boxShadow: "0 0 12px rgba(0,0,0,0.18)",
+                  transition: "background 0.35s ease, border 0.35s ease",
                 }}
               >
                 문서 닫기
@@ -694,6 +907,8 @@ export default function App() {
               ? "#ff3a3a"
               : statusText === "ACCESS DENIED"
               ? "#ff8b8b"
+              : isPoemTheme
+              ? "#ffe5f3"
               : "#bcd4ff",
             fontSize: "14px",
             textAlign: "center",
@@ -701,7 +916,12 @@ export default function App() {
             minHeight: "22px",
             wordBreak: "break-word",
             animation: isDenied ? "deniedFlash 0.28s infinite" : "none",
-            textShadow: isDenied ? "0 0 12px rgba(255, 0, 0, 0.45)" : "none",
+            textShadow: isDenied
+              ? "0 0 12px rgba(255, 0, 0, 0.45)"
+              : isPoemTheme
+              ? "0 0 12px rgba(255, 215, 235, 0.18)"
+              : "none",
+            transition: "color 0.35s ease, text-shadow 0.35s ease",
           }}
         >
           {statusText}
@@ -712,12 +932,20 @@ export default function App() {
             style={{
               width: "100%",
               marginTop: "24px",
-              background: "rgba(9, 19, 33, 0.84)",
-              border: "1px solid rgba(160, 200, 255, 0.16)",
+              background: isPoemTheme
+                ? "rgba(86, 38, 72, 0.86)"
+                : "rgba(9, 19, 33, 0.84)",
+              border: isPoemTheme
+                ? "1px solid rgba(255, 220, 240, 0.18)"
+                : "1px solid rgba(160, 200, 255, 0.16)",
               borderRadius: "14px",
               padding: "16px",
               boxSizing: "border-box",
-              boxShadow: "0 0 24px rgba(0, 0, 0, 0.22)",
+              boxShadow: isPoemTheme
+                ? "0 0 28px rgba(255, 180, 220, 0.1)"
+                : "0 0 24px rgba(0, 0, 0, 0.22)",
+              transition:
+                "background 0.4s ease, border 0.4s ease, box-shadow 0.4s ease",
             }}
           >
             <div
@@ -732,9 +960,10 @@ export default function App() {
             >
               <div
                 style={{
-                  color: "#9ec2ff",
+                  color: isPoemTheme ? "#ffd4ea" : "#9ec2ff",
                   fontSize: "13px",
                   letterSpacing: "1.3px",
+                  transition: "color 0.35s ease",
                 }}
               >
                 RECENT ACCESS LOG
@@ -746,8 +975,10 @@ export default function App() {
                   padding: "8px 12px",
                   borderRadius: "8px",
                   border: "1px solid rgba(255,255,255,0.12)",
-                  background: "rgba(70,20,20,0.7)",
-                  color: "#ffd0d0",
+                  background: isPoemTheme
+                    ? "rgba(120,45,80,0.72)"
+                    : "rgba(70,20,20,0.7)",
+                  color: isPoemTheme ? "#ffe7f3" : "#ffd0d0",
                   cursor: "pointer",
                   fontFamily: "monospace",
                   fontSize: "12px",
@@ -758,27 +989,31 @@ export default function App() {
             </div>
 
             <div
-  style={{
-    marginBottom: "12px",
-    color: "#bcd4ff",
-    fontSize: "12px",
-    letterSpacing: "0.8px",
-    lineHeight: "1.6",
-  }}
->
-  열람한 기록:{" "}
-  <span style={{ color: "#ffffff" }}>{history.length}</span>
-  {" / "}
-  현재 존재하는 기록:{" "}
-  <span style={{ color: "#9ec2ff" }}>{normalizedDatabase.length}</span>
-</div>
+              style={{
+                marginBottom: "12px",
+                color: isPoemTheme ? "#ffe5f3" : "#bcd4ff",
+                fontSize: "12px",
+                letterSpacing: "0.8px",
+                lineHeight: "1.6",
+                transition: "color 0.35s ease",
+              }}
+            >
+              열람한 기록:{" "}
+              <span style={{ color: "#ffffff" }}>{history.length}</span>
+              {" / "}
+              현재 존재하는 기록:{" "}
+              <span style={{ color: isPoemTheme ? "#ffd4ea" : "#9ec2ff" }}>
+                {normalizedDatabase.length}
+              </span>
+            </div>
 
             {history.length === 0 ? (
               <div
                 style={{
-                  color: "#8ea8cf",
+                  color: isPoemTheme ? "#f4d8e8" : "#8ea8cf",
                   fontSize: "13px",
                   lineHeight: "1.7",
+                  transition: "color 0.35s ease",
                 }}
               >
                 아직 이 기기에서 열람한 문서 기록이 없습니다.
@@ -797,13 +1032,18 @@ export default function App() {
                     style={{
                       width: "100%",
                       textAlign: "left",
-                      background: "rgba(6, 14, 26, 0.92)",
-                      border: "1px solid rgba(160, 200, 255, 0.14)",
+                      background: isPoemTheme
+                        ? "rgba(62, 26, 50, 0.94)"
+                        : "rgba(6, 14, 26, 0.92)",
+                      border: isPoemTheme
+                        ? "1px solid rgba(255, 220, 240, 0.14)"
+                        : "1px solid rgba(160, 200, 255, 0.14)",
                       borderRadius: "10px",
                       padding: "12px",
                       color: "#eaf2ff",
                       cursor: "pointer",
                       fontFamily: "monospace",
+                      transition: "background 0.35s ease, border 0.35s ease",
                     }}
                   >
                     <div
@@ -825,7 +1065,8 @@ export default function App() {
                       <div
                         style={{
                           fontSize: "12px",
-                          color: "#8ea8cf",
+                          color: isPoemTheme ? "#f2cbe0" : "#8ea8cf",
+                          transition: "color 0.35s ease",
                         }}
                       >
                         {formatOpenedTime(item.openedAt)}
@@ -836,8 +1077,9 @@ export default function App() {
                       style={{
                         marginTop: "6px",
                         fontSize: "12px",
-                        color: "#9ec2ff",
+                        color: isPoemTheme ? "#ffd4ea" : "#9ec2ff",
                         letterSpacing: "1px",
+                        transition: "color 0.35s ease",
                       }}
                     >
                       CODE: {item.code}
@@ -854,14 +1096,22 @@ export default function App() {
             style={{
               marginTop: "26px",
               width: "100%",
-              background: "rgba(9, 19, 33, 0.9)",
-              border: "1px solid rgba(160, 200, 255, 0.18)",
+              background: isPoemTheme
+                ? "rgba(90, 42, 74, 0.9)"
+                : "rgba(9, 19, 33, 0.9)",
+              border: isPoemTheme
+                ? "1px solid rgba(255, 220, 240, 0.22)"
+                : "1px solid rgba(160, 200, 255, 0.18)",
               borderRadius: "14px",
               padding: "18px",
               boxSizing: "border-box",
-              boxShadow: "0 0 30px rgba(0, 0, 0, 0.35)",
+              boxShadow: isPoemTheme
+                ? "0 0 38px rgba(255, 180, 225, 0.14)"
+                : "0 0 30px rgba(0, 0, 0, 0.35)",
               position: "relative",
               overflow: "hidden",
+              transition:
+                "background 0.45s ease, border 0.45s ease, box-shadow 0.45s ease",
             }}
           >
             <div
@@ -869,8 +1119,9 @@ export default function App() {
                 position: "absolute",
                 inset: 0,
                 pointerEvents: "none",
-                background:
-                  "linear-gradient(180deg, rgba(255,255,255,0.015) 0%, transparent 24%, transparent 76%, rgba(255,255,255,0.015) 100%)",
+                background: isPoemTheme
+                  ? "linear-gradient(180deg, rgba(255,255,255,0.04) 0%, transparent 24%, transparent 76%, rgba(255,255,255,0.03) 100%)"
+                  : "linear-gradient(180deg, rgba(255,255,255,0.015) 0%, transparent 24%, transparent 76%, rgba(255,255,255,0.015) 100%)",
               }}
             />
 
@@ -888,6 +1139,9 @@ export default function App() {
                   fontSize: "clamp(20px, 4.5vw, 28px)",
                   color: "#ffffff",
                   wordBreak: "break-word",
+                  textShadow: isPoemTheme
+                    ? "0 0 16px rgba(255, 215, 235, 0.18)"
+                    : "none",
                 }}
               >
                 {selectedIntel.title}
@@ -896,10 +1150,11 @@ export default function App() {
               <p
                 style={{
                   margin: 0,
-                  color: "#bcd4ff",
+                  color: isPoemTheme ? "#ffe6f3" : "#bcd4ff",
                   fontSize: "14px",
                   lineHeight: "1.6",
                   wordBreak: "break-word",
+                  transition: "color 0.35s ease",
                 }}
               >
                 {selectedIntel.subtitle}
@@ -922,18 +1177,32 @@ export default function App() {
                   width: "100%",
                   maxWidth: "320px",
                   borderRadius: "12px",
-                  border: "1px solid rgba(160, 200, 255, 0.18)",
+                  border: isPoemTheme
+                    ? "1px solid rgba(255, 220, 240, 0.26)"
+                    : "1px solid rgba(160, 200, 255, 0.18)",
                   objectFit: "cover",
                   display: "block",
+                  boxShadow: isPoemTheme
+                    ? "0 0 24px rgba(255, 170, 215, 0.18), 0 0 48px rgba(255, 200, 228, 0.08)"
+                    : "none",
+                  filter: isPoemTheme
+                    ? "brightness(1.06) saturate(1.12)"
+                    : "none",
+                  transition:
+                    "border 0.35s ease, box-shadow 0.35s ease, filter 0.35s ease",
                 }}
               />
             </div>
 
             <div
               style={{
-                border: "1px solid rgba(160, 200, 255, 0.15)",
+                border: isPoemTheme
+                  ? "1px solid rgba(255, 220, 240, 0.18)"
+                  : "1px solid rgba(160, 200, 255, 0.15)",
                 borderRadius: "12px",
-                background: "rgba(4, 11, 20, 0.95)",
+                background: isPoemTheme
+                  ? "rgba(50, 18, 40, 0.95)"
+                  : "rgba(4, 11, 20, 0.95)",
                 padding: "14px",
                 maxHeight: "50vh",
                 overflowY: "auto",
@@ -941,14 +1210,16 @@ export default function App() {
                 boxSizing: "border-box",
                 position: "relative",
                 zIndex: 1,
+                transition: "border 0.35s ease, background 0.35s ease",
               }}
             >
               <div
                 style={{
-                  color: "#8fb7ff",
+                  color: isPoemTheme ? "#ffd4ea" : "#8fb7ff",
                   fontSize: "12px",
                   marginBottom: "10px",
                   letterSpacing: "1.5px",
+                  transition: "color 0.35s ease",
                 }}
               >
                 DOCUMENT CONTENT
@@ -963,9 +1234,12 @@ export default function App() {
                   textAlign: "left",
                   maxWidth: "100%",
                   fontSize: "14px",
-                  lineHeight: "1.75",
-                  color: "#eaf2ff",
-                  textShadow: "0 0 8px rgba(180, 220, 255, 0.04)",
+                  lineHeight: "1.78",
+                  color: isPoemTheme ? "#fff6fb" : "#eaf2ff",
+                  textShadow: isPoemTheme
+                    ? "0 0 10px rgba(255, 220, 238, 0.08)"
+                    : "0 0 8px rgba(180, 220, 255, 0.04)",
+                  transition: "color 0.35s ease, text-shadow 0.35s ease",
                 }}
               >
                 {displayedText}
@@ -1001,7 +1275,10 @@ export default function App() {
               style={{
                 width: "min(160px, 42vw)",
                 marginBottom: "20px",
-                filter: "brightness(1.2)",
+                filter: isPoemTheme
+                  ? "brightness(1.34) drop-shadow(0 0 16px rgba(255,210,235,0.28))"
+                  : "brightness(1.2)",
+                transition: "filter 0.35s ease",
               }}
             />
 
@@ -1009,8 +1286,12 @@ export default function App() {
               style={{
                 fontSize: "14px",
                 letterSpacing: "3px",
-                color: "#bcd4ff",
+                color: isPoemTheme ? "#ffe6f3" : "#bcd4ff",
                 wordBreak: "break-word",
+                textShadow: isPoemTheme
+                  ? "0 0 12px rgba(255, 210, 235, 0.18)"
+                  : "none",
+                transition: "color 0.35s ease, text-shadow 0.35s ease",
               }}
             >
               뉴 샌디에이고 데이터 체계
@@ -1025,10 +1306,12 @@ export default function App() {
           position: "absolute",
           inset: 0,
           zIndex: 3,
-          opacity: 0.12,
-          background:
-            "repeating-linear-gradient(to bottom, rgba(255,255,255,0.18) 0px, rgba(255,255,255,0.18) 1px, transparent 2px, transparent 4px)",
+          opacity: isPoemTheme ? 0.08 : 0.12,
+          background: isPoemTheme
+            ? "repeating-linear-gradient(to bottom, rgba(255,245,250,0.12) 0px, rgba(255,245,250,0.12) 1px, transparent 2px, transparent 4px)"
+            : "repeating-linear-gradient(to bottom, rgba(255,255,255,0.18) 0px, rgba(255,255,255,0.18) 1px, transparent 2px, transparent 4px)",
           mixBlendMode: "overlay",
+          transition: "opacity 0.35s ease, background 0.35s ease",
         }}
       />
 
@@ -1038,16 +1321,24 @@ export default function App() {
           position: "absolute",
           inset: 0,
           zIndex: 4,
-          opacity: 0.055,
-          backgroundImage: `
-            radial-gradient(circle at 20% 20%, rgba(255,255,255,0.18) 0 1px, transparent 1px),
-            radial-gradient(circle at 80% 35%, rgba(255,255,255,0.14) 0 1px, transparent 1px),
-            radial-gradient(circle at 45% 70%, rgba(255,255,255,0.16) 0 1px, transparent 1px),
-            radial-gradient(circle at 65% 85%, rgba(255,255,255,0.1) 0 1px, transparent 1px)
-          `,
+          opacity: isPoemTheme ? 0.07 : 0.055,
+          backgroundImage: isPoemTheme
+            ? `
+              radial-gradient(circle at 20% 20%, rgba(255,255,255,0.16) 0 1px, transparent 1px),
+              radial-gradient(circle at 80% 35%, rgba(255,220,238,0.14) 0 1px, transparent 1px),
+              radial-gradient(circle at 45% 70%, rgba(255,225,240,0.16) 0 1px, transparent 1px),
+              radial-gradient(circle at 65% 85%, rgba(255,210,232,0.1) 0 1px, transparent 1px)
+            `
+            : `
+              radial-gradient(circle at 20% 20%, rgba(255,255,255,0.18) 0 1px, transparent 1px),
+              radial-gradient(circle at 80% 35%, rgba(255,255,255,0.14) 0 1px, transparent 1px),
+              radial-gradient(circle at 45% 70%, rgba(255,255,255,0.16) 0 1px, transparent 1px),
+              radial-gradient(circle at 65% 85%, rgba(255,255,255,0.1) 0 1px, transparent 1px)
+            `,
           backgroundSize:
             "120px 120px, 160px 160px, 140px 140px, 180px 180px",
           animation: "noiseMove 0.22s steps(2) infinite",
+          transition: "opacity 0.35s ease, background-image 0.35s ease",
         }}
       />
 
@@ -1057,7 +1348,10 @@ export default function App() {
           position: "absolute",
           inset: 0,
           zIndex: 1,
-          boxShadow: "inset 0 0 120px rgba(0, 0, 0, 0.35)",
+          boxShadow: isPoemTheme
+            ? "inset 0 0 120px rgba(55, 12, 38, 0.22)"
+            : "inset 0 0 120px rgba(0, 0, 0, 0.35)",
+          transition: "box-shadow 0.35s ease",
         }}
       />
 
@@ -1081,6 +1375,24 @@ export default function App() {
             50% { transform: translate(4px, -5px); }
             75% { transform: translate(-3px, -2px); }
             100% { transform: translate(0, 0); }
+          }
+
+          @keyframes petalFloat {
+            0% {
+              transform: translateY(0px) translateX(0px);
+            }
+            25% {
+              transform: translateY(10px) translateX(-6px);
+            }
+            50% {
+              transform: translateY(22px) translateX(8px);
+            }
+            75% {
+              transform: translateY(34px) translateX(-5px);
+            }
+            100% {
+              transform: translateY(46px) translateX(6px);
+            }
           }
 
           body {
