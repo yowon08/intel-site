@@ -36,6 +36,7 @@ const bootLines = [
 
 export default function App() {
   const [bootStage, setBootStage] = useState<BootStage>("intro");
+  const [introVisible, setIntroVisible] = useState(true);
   const [visibleBootLines, setVisibleBootLines] = useState<string[]>([]);
   const [inputCode, setInputCode] = useState("");
   const [selectedIntel, setSelectedIntel] = useState<IntelEntry | null>(null);
@@ -66,6 +67,7 @@ export default function App() {
   const openDocumentTimeoutRef = useRef<number | null>(null);
   const poemPulseTimeoutRef = useRef<number | null>(null);
   const poemSweepTimeoutRef = useRef<number | null>(null);
+  const introHideTimeoutRef = useRef<number | null>(null);
 
   const normalizedDatabase = useMemo(() => {
     return intelDatabase.map((item) => ({
@@ -354,7 +356,6 @@ export default function App() {
     const unlockAudio = () => {
       if (hasUnlockedAudioRef.current) return;
       hasUnlockedAudioRef.current = true;
-
       safePlay(bootSoundRef.current, true);
     };
 
@@ -365,21 +366,12 @@ export default function App() {
       window.removeEventListener("pointerdown", unlockAudio);
       window.removeEventListener("keydown", unlockAudio);
 
-      if (typingTimeoutRef.current) {
-        window.clearTimeout(typingTimeoutRef.current);
-      }
-      if (openDocumentTimeoutRef.current) {
-        window.clearTimeout(openDocumentTimeoutRef.current);
-      }
-      if (poemPulseTimeoutRef.current) {
-        window.clearTimeout(poemPulseTimeoutRef.current);
-      }
-      if (poemSweepTimeoutRef.current) {
-        window.clearTimeout(poemSweepTimeoutRef.current);
-      }
-      if (deniedLoopRef.current) {
-        window.clearInterval(deniedLoopRef.current);
-      }
+      if (typingTimeoutRef.current) window.clearTimeout(typingTimeoutRef.current);
+      if (openDocumentTimeoutRef.current) window.clearTimeout(openDocumentTimeoutRef.current);
+      if (poemPulseTimeoutRef.current) window.clearTimeout(poemPulseTimeoutRef.current);
+      if (poemSweepTimeoutRef.current) window.clearTimeout(poemSweepTimeoutRef.current);
+      if (introHideTimeoutRef.current) window.clearTimeout(introHideTimeoutRef.current);
+      if (deniedLoopRef.current) window.clearInterval(deniedLoopRef.current);
 
       [
         bgmRef.current,
@@ -412,32 +404,32 @@ export default function App() {
       setVisibleBootLines((prev) => {
         const next = [...prev, bootLines[flowIndex % bootLines.length]];
         flowIndex += 1;
-        return next.slice(-18);
+        return next.slice(-16);
       });
 
-      if (Math.random() > 0.68) {
+      if (Math.random() > 0.82) {
         setGlitch(true);
-        window.setTimeout(() => setGlitch(false), 80);
+        window.setTimeout(() => setGlitch(false), 55);
       }
-    }, 180);
+    }, 215);
 
     const collapseTimer = window.setTimeout(() => {
       if (!mounted) return;
       setBootStage("collapse");
       safePlay(bootSoundRef.current, true);
-    }, 2400);
+    }, 2550);
 
     const rebootTimer = window.setTimeout(() => {
       if (!mounted) return;
       setBootStage("reboot");
-    }, 2920);
+    }, 3220);
 
     const readyTimer = window.setTimeout(() => {
       if (!mounted) return;
       setBootStage("ready");
       setStatusText("접근 승인됨. 코드 입력 대기 중.");
       startNormalBgm();
-    }, 3600);
+    }, 4050);
 
     return () => {
       mounted = false;
@@ -449,15 +441,31 @@ export default function App() {
   }, []);
 
   useEffect(() => {
+    if (bootStage !== "ready") return;
+
+    introHideTimeoutRef.current = window.setTimeout(() => {
+      setIntroVisible(false);
+      introHideTimeoutRef.current = null;
+    }, 520);
+
+    return () => {
+      if (introHideTimeoutRef.current) {
+        window.clearTimeout(introHideTimeoutRef.current);
+        introHideTimeoutRef.current = null;
+      }
+    };
+  }, [bootStage]);
+
+  useEffect(() => {
     const interval = window.setInterval(() => {
-      if (Math.random() > 0.86) {
+      if (Math.random() > 0.94) {
         setGlitch(true);
         setScreenFlicker(true);
 
-        window.setTimeout(() => setGlitch(false), 120);
-        window.setTimeout(() => setScreenFlicker(false), 70);
+        window.setTimeout(() => setGlitch(false), 70);
+        window.setTimeout(() => setScreenFlicker(false), 45);
       }
-    }, 1100);
+    }, 1700);
 
     return () => window.clearInterval(interval);
   }, []);
@@ -658,7 +666,7 @@ export default function App() {
   };
 
   const isPoemTheme = themeMode === "poem";
-  const showIntroOverlay = bootStage !== "ready";
+  const showIntroOverlay = introVisible;
 
   return (
     <div
@@ -676,13 +684,14 @@ export default function App() {
         alignItems: "center",
         boxSizing: "border-box",
         overflow: "hidden",
-        transition: "background 0.9s ease, filter 0.4s ease, transform 0.25s ease, padding 0.4s ease",
+        transition:
+          "background 1.1s ease, filter 0.35s ease, transform 0.2s ease, padding 0.55s ease",
         filter: poemPulse
-          ? "brightness(1.25) saturate(1.28) hue-rotate(-10deg)"
+          ? "brightness(1.2) saturate(1.2) hue-rotate(-8deg)"
           : isPoemTheme
-          ? "brightness(1.08) saturate(1.12)"
+          ? "brightness(1.06) saturate(1.08)"
           : "none",
-        transform: poemPulse ? "scale(1.008)" : "scale(1)",
+        transform: poemPulse ? "scale(1.005)" : "scale(1)",
       }}
     >
       {showIntroOverlay && (
@@ -696,6 +705,9 @@ export default function App() {
             alignItems: "center",
             justifyContent: "center",
             overflow: "hidden",
+            opacity: bootStage === "ready" ? 0 : 1,
+            transform: bootStage === "ready" ? "scale(1.01)" : "scale(1)",
+            transition: "opacity 0.55s ease, transform 0.55s ease",
           }}
         >
           <div
@@ -703,9 +715,9 @@ export default function App() {
               position: "absolute",
               inset: 0,
               background:
-                "radial-gradient(circle at 50% 45%, rgba(160,205,255,0.13) 0%, rgba(80,140,220,0.08) 18%, rgba(0,0,0,0) 55%)",
-              opacity: bootStage === "collapse" ? 0.35 : 1,
-              transition: "opacity 0.2s ease",
+                "radial-gradient(circle at 50% 45%, rgba(160,205,255,0.1) 0%, rgba(80,140,220,0.06) 18%, rgba(0,0,0,0) 55%)",
+              opacity: bootStage === "collapse" ? 0.28 : 1,
+              transition: "opacity 0.28s ease",
             }}
           />
 
@@ -713,9 +725,9 @@ export default function App() {
             style={{
               position: "absolute",
               inset: 0,
-              opacity: 0.16,
+              opacity: 0.09,
               background:
-                "repeating-linear-gradient(to bottom, rgba(255,255,255,0.12) 0px, rgba(255,255,255,0.12) 1px, transparent 2px, transparent 4px)",
+                "repeating-linear-gradient(to bottom, rgba(255,255,255,0.08) 0px, rgba(255,255,255,0.08) 1px, transparent 2px, transparent 5px)",
               mixBlendMode: "screen",
             }}
           />
@@ -726,10 +738,10 @@ export default function App() {
               inset: 0,
               pointerEvents: "none",
               backgroundImage:
-                "radial-gradient(circle at 20% 20%, rgba(255,255,255,0.18) 0 1px, transparent 1px), radial-gradient(circle at 80% 35%, rgba(255,255,255,0.12) 0 1px, transparent 1px), radial-gradient(circle at 45% 70%, rgba(255,255,255,0.14) 0 1px, transparent 1px)",
-              backgroundSize: "120px 120px, 160px 160px, 140px 140px",
-              animation: "noiseMove 0.22s steps(2) infinite",
-              opacity: 0.06,
+                "radial-gradient(circle at 20% 20%, rgba(255,255,255,0.14) 0 1px, transparent 1px), radial-gradient(circle at 80% 35%, rgba(255,255,255,0.1) 0 1px, transparent 1px), radial-gradient(circle at 45% 70%, rgba(255,255,255,0.12) 0 1px, transparent 1px)",
+              backgroundSize: "140px 140px, 180px 180px, 160px 160px",
+              animation: "noiseMoveSoft 1.6s linear infinite",
+              opacity: 0.035,
             }}
           />
 
@@ -739,23 +751,23 @@ export default function App() {
               left: 0,
               right: 0,
               top: "50%",
-              height: bootStage === "collapse" ? "2px" : "100%",
+              height: bootStage === "collapse" ? "3px" : "100%",
               transform:
                 bootStage === "collapse"
-                  ? "translateY(-50%) scaleY(1) scaleX(0.08)"
+                  ? "translateY(-50%) scaleY(1) scaleX(0.18)"
                   : bootStage === "reboot"
                   ? "translateY(-50%) scaleY(1) scaleX(1)"
                   : "translateY(-50%) scaleY(1) scaleX(1)",
-              opacity: bootStage === "collapse" ? 1 : bootStage === "reboot" ? 0.75 : 1,
+              opacity: bootStage === "collapse" ? 0.9 : bootStage === "reboot" ? 0.72 : 1,
               transition:
-                "transform 0.24s ease-in, height 0.24s ease-in, opacity 0.18s ease-in",
+                "transform 0.34s cubic-bezier(0.22, 1, 0.36, 1), height 0.34s cubic-bezier(0.22, 1, 0.36, 1), opacity 0.26s ease",
               boxShadow:
                 bootStage === "collapse"
-                  ? "0 0 18px rgba(180,230,255,0.95), 0 0 44px rgba(120,180,255,0.7)"
+                  ? "0 0 12px rgba(180,230,255,0.7), 0 0 28px rgba(120,180,255,0.4)"
                   : "none",
               background:
                 bootStage === "collapse"
-                  ? "linear-gradient(90deg, transparent 0%, rgba(255,255,255,0.9) 18%, rgba(145,205,255,1) 50%, rgba(255,255,255,0.9) 82%, transparent 100%)"
+                  ? "linear-gradient(90deg, transparent 0%, rgba(255,255,255,0.75) 18%, rgba(145,205,255,0.88) 50%, rgba(255,255,255,0.75) 82%, transparent 100%)"
                   : "transparent",
               pointerEvents: "none",
             }}
@@ -772,14 +784,15 @@ export default function App() {
               justifyContent: "center",
               transform:
                 bootStage === "collapse"
-                  ? "scaleY(0.03) scaleX(0.92)"
+                  ? "scaleY(0.14) scaleX(0.98)"
                   : bootStage === "reboot"
-                  ? "scaleY(1.08) scaleX(1.02)"
+                  ? "scaleY(1.02) scaleX(1.005)"
                   : "scale(1)",
-              opacity: bootStage === "collapse" ? 0.45 : bootStage === "reboot" ? 0.92 : 1,
-              transition: "transform 0.24s ease-in, opacity 0.22s ease-in",
+              opacity: bootStage === "collapse" ? 0.58 : bootStage === "reboot" ? 0.94 : 1,
+              transition:
+                "transform 0.38s cubic-bezier(0.22, 1, 0.36, 1), opacity 0.32s ease",
               filter: glitch
-                ? "contrast(1.22) brightness(1.12) saturate(0.95)"
+                ? "contrast(1.1) brightness(1.05) saturate(0.98)"
                 : "none",
             }}
           >
@@ -800,7 +813,8 @@ export default function App() {
                   position: "relative",
                   overflow: "hidden",
                   maskImage: "radial-gradient(circle at center, black 52%, transparent 100%)",
-                  WebkitMaskImage: "radial-gradient(circle at center, black 52%, transparent 100%)",
+                  WebkitMaskImage:
+                    "radial-gradient(circle at center, black 52%, transparent 100%)",
                 }}
               >
                 {visibleBootLines.map((line, index) => {
@@ -814,11 +828,14 @@ export default function App() {
                         left: `${leftBase}%`,
                         top: `${10 + row * 10}%`,
                         whiteSpace: "nowrap",
-                        color: index % 2 === 0 ? "rgba(175,215,255,0.26)" : "rgba(255,255,255,0.14)",
+                        color:
+                          index % 2 === 0
+                            ? "rgba(175,215,255,0.2)"
+                            : "rgba(255,255,255,0.1)",
                         fontSize: row % 2 === 0 ? "13px" : "12px",
                         letterSpacing: "1px",
-                        textShadow: "0 0 10px rgba(130,185,255,0.16)",
-                        animation: `bootFlow ${3.4 + (index % 4) * 0.5}s linear forwards`,
+                        textShadow: "0 0 8px rgba(130,185,255,0.1)",
+                        animation: `bootFlow ${4.2 + (index % 4) * 0.55}s linear forwards`,
                       }}
                     >
                       &gt; {line}
@@ -836,7 +853,8 @@ export default function App() {
                 flexDirection: "column",
                 alignItems: "center",
                 gap: "18px",
-                opacity: bootStage === "collapse" ? 0.75 : 1,
+                opacity: bootStage === "collapse" ? 0.8 : 1,
+                transition: "opacity 0.28s ease",
               }}
             >
               <img
@@ -845,8 +863,9 @@ export default function App() {
                 style={{
                   width: "min(180px, 42vw)",
                   filter:
-                    "brightness(1.24) drop-shadow(0 0 16px rgba(160,220,255,0.28))",
-                  transform: glitch ? "translateX(2px)" : "none",
+                    "brightness(1.2) drop-shadow(0 0 12px rgba(160,220,255,0.18))",
+                  transform: glitch ? "translateX(1px)" : "none",
+                  transition: "transform 0.08s linear",
                 }}
               />
               <div
@@ -856,8 +875,8 @@ export default function App() {
                   textAlign: "center",
                   color: "#eef6ff",
                   textShadow: glitch
-                    ? "2px 0 rgba(255,0,70,0.35), -2px 0 rgba(80,180,255,0.35)"
-                    : "0 0 16px rgba(170,220,255,0.16)",
+                    ? "1px 0 rgba(255,0,70,0.18), -1px 0 rgba(80,180,255,0.18)"
+                    : "0 0 12px rgba(170,220,255,0.12)",
                 }}
               >
                 NEW SAN DIEGO INTELLIGENCE AGENCY
@@ -873,10 +892,10 @@ export default function App() {
           inset: 0,
           pointerEvents: "none",
           zIndex: 0,
-          opacity: isPoemTheme ? 0.3 : 0,
+          opacity: isPoemTheme ? 0.24 : 0,
           background: poemPulse
-            ? "radial-gradient(circle at 50% 45%, rgba(255,244,250,0.58) 0%, rgba(255,185,225,0.28) 24%, rgba(255,150,215,0.12) 45%, transparent 72%)"
-            : "radial-gradient(circle at 50% 45%, rgba(255,244,250,0.3) 0%, rgba(255,185,225,0.16) 28%, transparent 72%)",
+            ? "radial-gradient(circle at 50% 45%, rgba(255,244,250,0.5) 0%, rgba(255,185,225,0.22) 24%, rgba(255,150,215,0.08) 45%, transparent 72%)"
+            : "radial-gradient(circle at 50% 45%, rgba(255,244,250,0.24) 0%, rgba(255,185,225,0.12) 28%, transparent 72%)",
           transition: "opacity 0.35s ease, background 0.3s ease",
         }}
       />
@@ -887,9 +906,9 @@ export default function App() {
           inset: 0,
           pointerEvents: "none",
           zIndex: 0,
-          opacity: poemSweep ? 0.42 : 0,
+          opacity: poemSweep ? 0.34 : 0,
           background:
-            "linear-gradient(90deg, transparent 0%, rgba(255,255,255,0.24) 18%, rgba(255,210,235,0.36) 48%, rgba(255,255,255,0.22) 78%, transparent 100%)",
+            "linear-gradient(90deg, transparent 0%, rgba(255,255,255,0.18) 18%, rgba(255,210,235,0.24) 48%, rgba(255,255,255,0.16) 78%, transparent 100%)",
           transform: poemSweep
             ? "translateX(0%) skewX(-14deg)"
             : "translateX(-120%) skewX(-14deg)",
@@ -903,12 +922,12 @@ export default function App() {
           inset: 0,
           pointerEvents: "none",
           zIndex: 0,
-          opacity: isPoemTheme ? 0.14 : 0,
+          opacity: isPoemTheme ? 0.1 : 0,
           backgroundImage: `
-            radial-gradient(circle at 12% 20%, rgba(255,255,255,0.24) 0 2px, transparent 3px),
-            radial-gradient(circle at 85% 30%, rgba(255,220,238,0.22) 0 2px, transparent 3px),
-            radial-gradient(circle at 35% 78%, rgba(255,210,235,0.18) 0 2px, transparent 3px),
-            radial-gradient(circle at 70% 88%, rgba(255,240,248,0.14) 0 2px, transparent 3px)
+            radial-gradient(circle at 12% 20%, rgba(255,255,255,0.2) 0 2px, transparent 3px),
+            radial-gradient(circle at 85% 30%, rgba(255,220,238,0.18) 0 2px, transparent 3px),
+            radial-gradient(circle at 35% 78%, rgba(255,210,235,0.14) 0 2px, transparent 3px),
+            radial-gradient(circle at 70% 88%, rgba(255,240,248,0.1) 0 2px, transparent 3px)
           `,
           backgroundSize: "220px 220px, 260px 260px, 240px 240px, 300px 300px",
           animation: isPoemTheme ? "petalFloat 12s linear infinite" : "none",
@@ -926,17 +945,17 @@ export default function App() {
           flexDirection: "column",
           alignItems: "center",
           transform: glitch
-            ? `translateX(2px) ${poemPulse ? "skewX(-1deg)" : ""}`
+            ? `translateX(1px) ${poemPulse ? "skewX(-0.5deg)" : ""}`
             : poemPulse
             ? "translateY(-1px)"
             : "none",
           filter: glitch
             ? isPoemTheme
-              ? "contrast(1.14) brightness(1.12) saturate(1.18)"
-              : "contrast(1.22) brightness(1.08) saturate(0.95)"
+              ? "contrast(1.08) brightness(1.07) saturate(1.1)"
+              : "contrast(1.08) brightness(1.04) saturate(0.98)"
             : "none",
-          opacity: screenFlicker ? 0.93 : 1,
-          transition: "transform 0.05s linear, opacity 0.05s linear, filter 0.05s linear",
+          opacity: screenFlicker ? 0.975 : 1,
+          transition: "transform 0.08s linear, opacity 0.08s linear, filter 0.08s linear",
           paddingTop: showIntroOverlay ? "0" : "8px",
         }}
       >
@@ -951,11 +970,11 @@ export default function App() {
                 fontSize: "clamp(18px, 4vw, 28px)",
                 textShadow: glitch
                   ? isPoemTheme
-                    ? "2px 0 rgba(255,180,220,0.45), -2px 0 rgba(255,245,250,0.32)"
-                    : "2px 0 rgba(255,0,70,0.35), -2px 0 rgba(80,180,255,0.35)"
+                    ? "1px 0 rgba(255,180,220,0.25), -1px 0 rgba(255,245,250,0.18)"
+                    : "1px 0 rgba(255,0,70,0.2), -1px 0 rgba(80,180,255,0.2)"
                   : isPoemTheme
-                  ? "0 0 18px rgba(255, 210, 235, 0.2)"
-                  : "0 0 12px rgba(180,220,255,0.06)",
+                  ? "0 0 14px rgba(255, 210, 235, 0.14)"
+                  : "0 0 10px rgba(180,220,255,0.05)",
               }}
             >
               NEW SAN DIEGO INTELLIGENCE AGENCY
@@ -1050,9 +1069,9 @@ export default function App() {
               style={{
                 marginTop: "12px",
                 color: isDenied
-                  ? "#ff3a3a"
+                  ? "#ff5252"
                   : statusText === "ACCESS DENIED"
-                  ? "#ff8b8b"
+                  ? "#ff9494"
                   : isPoemTheme
                   ? "#ffe5f3"
                   : "#bcd4ff",
@@ -1061,11 +1080,11 @@ export default function App() {
                 letterSpacing: "0.5px",
                 minHeight: "22px",
                 wordBreak: "break-word",
-                animation: isDenied ? "deniedFlash 0.28s infinite" : "none",
+                animation: isDenied ? "deniedFlashSoft 0.55s infinite" : "none",
                 textShadow: isDenied
-                  ? "0 0 12px rgba(255, 0, 0, 0.45)"
+                  ? "0 0 8px rgba(255, 0, 0, 0.25)"
                   : isPoemTheme
-                  ? "0 0 12px rgba(255, 215, 235, 0.18)"
+                  ? "0 0 10px rgba(255, 215, 235, 0.14)"
                   : "none",
               }}
             >
@@ -1091,8 +1110,8 @@ export default function App() {
                       width: "min(160px, 42vw)",
                       marginBottom: "20px",
                       filter: isPoemTheme
-                        ? "brightness(1.34) drop-shadow(0 0 16px rgba(255,210,235,0.28))"
-                        : "brightness(1.2)",
+                        ? "brightness(1.28) drop-shadow(0 0 14px rgba(255,210,235,0.2))"
+                        : "brightness(1.14)",
                     }}
                   />
 
@@ -1103,7 +1122,7 @@ export default function App() {
                       color: isPoemTheme ? "#ffe6f3" : "#bcd4ff",
                       wordBreak: "break-word",
                       textShadow: isPoemTheme
-                        ? "0 0 12px rgba(255, 210, 235, 0.18)"
+                        ? "0 0 10px rgba(255, 210, 235, 0.14)"
                         : "none",
                     }}
                   >
@@ -1125,8 +1144,8 @@ export default function App() {
                     padding: "16px",
                     boxSizing: "border-box",
                     boxShadow: isPoemTheme
-                      ? "0 0 28px rgba(255, 180, 220, 0.1)"
-                      : "0 0 24px rgba(0, 0, 0, 0.22)",
+                      ? "0 0 24px rgba(255, 180, 220, 0.08)"
+                      : "0 0 20px rgba(0, 0, 0, 0.2)",
                   }}
                 >
                   <div
@@ -1281,8 +1300,8 @@ export default function App() {
                   padding: "18px",
                   boxSizing: "border-box",
                   boxShadow: isPoemTheme
-                    ? "0 0 38px rgba(255, 180, 225, 0.14)"
-                    : "0 0 30px rgba(0, 0, 0, 0.35)",
+                    ? "0 0 30px rgba(255, 180, 225, 0.1)"
+                    : "0 0 24px rgba(0, 0, 0, 0.3)",
                   position: "relative",
                   overflow: "hidden",
                 }}
@@ -1293,8 +1312,8 @@ export default function App() {
                     inset: 0,
                     pointerEvents: "none",
                     background: isPoemTheme
-                      ? "linear-gradient(180deg, rgba(255,255,255,0.04) 0%, transparent 24%, transparent 76%, rgba(255,255,255,0.03) 100%)"
-                      : "linear-gradient(180deg, rgba(255,255,255,0.015) 0%, transparent 24%, transparent 76%, rgba(255,255,255,0.015) 100%)",
+                      ? "linear-gradient(180deg, rgba(255,255,255,0.03) 0%, transparent 24%, transparent 76%, rgba(255,255,255,0.025) 100%)"
+                      : "linear-gradient(180deg, rgba(255,255,255,0.012) 0%, transparent 24%, transparent 76%, rgba(255,255,255,0.012) 100%)",
                   }}
                 />
 
@@ -1313,7 +1332,7 @@ export default function App() {
                       color: "#ffffff",
                       wordBreak: "break-word",
                       textShadow: isPoemTheme
-                        ? "0 0 16px rgba(255, 215, 235, 0.18)"
+                        ? "0 0 12px rgba(255, 215, 235, 0.14)"
                         : "none",
                     }}
                   >
@@ -1358,9 +1377,9 @@ export default function App() {
                       objectFit: "cover",
                       display: "block",
                       boxShadow: isPoemTheme
-                        ? "0 0 24px rgba(255, 170, 215, 0.18), 0 0 48px rgba(255, 200, 228, 0.08)"
+                        ? "0 0 18px rgba(255, 170, 215, 0.12), 0 0 34px rgba(255, 200, 228, 0.05)"
                         : "none",
-                      filter: isPoemTheme ? "brightness(1.06) saturate(1.12)" : "none",
+                      filter: isPoemTheme ? "brightness(1.04) saturate(1.08)" : "none",
                     }}
                   />
                 </div>
@@ -1406,8 +1425,8 @@ export default function App() {
                       lineHeight: "1.78",
                       color: isPoemTheme ? "#fff6fb" : "#eaf2ff",
                       textShadow: isPoemTheme
-                        ? "0 0 10px rgba(255, 220, 238, 0.08)"
-                        : "0 0 8px rgba(180, 220, 255, 0.04)",
+                        ? "0 0 8px rgba(255, 220, 238, 0.06)"
+                        : "0 0 6px rgba(180, 220, 255, 0.03)",
                     }}
                   >
                     {displayedText}
@@ -1435,10 +1454,10 @@ export default function App() {
           position: "absolute",
           inset: 0,
           zIndex: 3,
-          opacity: isPoemTheme ? 0.08 : 0.12,
+          opacity: isPoemTheme ? 0.055 : 0.075,
           background: isPoemTheme
-            ? "repeating-linear-gradient(to bottom, rgba(255,245,250,0.12) 0px, rgba(255,245,250,0.12) 1px, transparent 2px, transparent 4px)"
-            : "repeating-linear-gradient(to bottom, rgba(255,255,255,0.18) 0px, rgba(255,255,255,0.18) 1px, transparent 2px, transparent 4px)",
+            ? "repeating-linear-gradient(to bottom, rgba(255,245,250,0.08) 0px, rgba(255,245,250,0.08) 1px, transparent 2px, transparent 5px)"
+            : "repeating-linear-gradient(to bottom, rgba(255,255,255,0.1) 0px, rgba(255,255,255,0.1) 1px, transparent 2px, transparent 5px)",
           mixBlendMode: "overlay",
           transition: "opacity 0.35s ease, background 0.35s ease",
         }}
@@ -1450,22 +1469,22 @@ export default function App() {
           position: "absolute",
           inset: 0,
           zIndex: 4,
-          opacity: isPoemTheme ? 0.07 : 0.055,
+          opacity: isPoemTheme ? 0.035 : 0.028,
           backgroundImage: isPoemTheme
             ? `
-              radial-gradient(circle at 20% 20%, rgba(255,255,255,0.16) 0 1px, transparent 1px),
-              radial-gradient(circle at 80% 35%, rgba(255,220,238,0.14) 0 1px, transparent 1px),
-              radial-gradient(circle at 45% 70%, rgba(255,225,240,0.16) 0 1px, transparent 1px),
-              radial-gradient(circle at 65% 85%, rgba(255,210,232,0.1) 0 1px, transparent 1px)
+              radial-gradient(circle at 20% 20%, rgba(255,255,255,0.12) 0 1px, transparent 1px),
+              radial-gradient(circle at 80% 35%, rgba(255,220,238,0.11) 0 1px, transparent 1px),
+              radial-gradient(circle at 45% 70%, rgba(255,225,240,0.12) 0 1px, transparent 1px),
+              radial-gradient(circle at 65% 85%, rgba(255,210,232,0.08) 0 1px, transparent 1px)
             `
             : `
-              radial-gradient(circle at 20% 20%, rgba(255,255,255,0.18) 0 1px, transparent 1px),
-              radial-gradient(circle at 80% 35%, rgba(255,255,255,0.14) 0 1px, transparent 1px),
-              radial-gradient(circle at 45% 70%, rgba(255,255,255,0.16) 0 1px, transparent 1px),
-              radial-gradient(circle at 65% 85%, rgba(255,255,255,0.1) 0 1px, transparent 1px)
+              radial-gradient(circle at 20% 20%, rgba(255,255,255,0.12) 0 1px, transparent 1px),
+              radial-gradient(circle at 80% 35%, rgba(255,255,255,0.1) 0 1px, transparent 1px),
+              radial-gradient(circle at 45% 70%, rgba(255,255,255,0.11) 0 1px, transparent 1px),
+              radial-gradient(circle at 65% 85%, rgba(255,255,255,0.08) 0 1px, transparent 1px)
             `,
-          backgroundSize: "120px 120px, 160px 160px, 140px 140px, 180px 180px",
-          animation: "noiseMove 0.22s steps(2) infinite",
+          backgroundSize: "140px 140px, 180px 180px, 160px 160px, 200px 200px",
+          animation: "noiseMoveSoft 1.8s linear infinite",
           transition: "opacity 0.35s ease, background-image 0.35s ease",
         }}
       />
@@ -1477,8 +1496,8 @@ export default function App() {
           inset: 0,
           zIndex: 1,
           boxShadow: isPoemTheme
-            ? "inset 0 0 120px rgba(55, 12, 38, 0.22)"
-            : "inset 0 0 120px rgba(0, 0, 0, 0.35)",
+            ? "inset 0 0 100px rgba(55, 12, 38, 0.18)"
+            : "inset 0 0 100px rgba(0, 0, 0, 0.28)",
           transition: "box-shadow 0.35s ease",
         }}
       />
@@ -1491,17 +1510,17 @@ export default function App() {
             }
           }
 
-          @keyframes deniedFlash {
+          @keyframes deniedFlashSoft {
             0% { opacity: 1; }
-            50% { opacity: 0.2; }
+            50% { opacity: 0.5; }
             100% { opacity: 1; }
           }
 
-          @keyframes noiseMove {
+          @keyframes noiseMoveSoft {
             0% { transform: translate(0, 0); }
-            25% { transform: translate(-6px, 4px); }
-            50% { transform: translate(4px, -5px); }
-            75% { transform: translate(-3px, -2px); }
+            25% { transform: translate(-2px, 1px); }
+            50% { transform: translate(1px, -2px); }
+            75% { transform: translate(-1px, -1px); }
             100% { transform: translate(0, 0); }
           }
 
@@ -1515,17 +1534,17 @@ export default function App() {
 
           @keyframes bootFlow {
             0% {
-              transform: translateX(110px);
+              transform: translateX(90px);
               opacity: 0;
             }
             10% {
-              opacity: 1;
-            }
-            85% {
               opacity: 0.9;
             }
+            85% {
+              opacity: 0.75;
+            }
             100% {
-              transform: translateX(-360px);
+              transform: translateX(-300px);
               opacity: 0;
             }
           }
@@ -1544,7 +1563,7 @@ export default function App() {
           }
 
           button:hover {
-            filter: brightness(1.08);
+            filter: brightness(1.06);
           }
 
           button:active {
