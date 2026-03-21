@@ -9,7 +9,7 @@ type IntelEntry = {
   text: string;
 };
 
-type BootStage = "booting" | "ready";
+type BootStage = "intro" | "collapse" | "reboot" | "ready";
 type ThemeMode = "normal" | "poem";
 
 type HistoryItem = {
@@ -27,11 +27,15 @@ const bootLines = [
   "방첩 프로토콜 가동...",
   "내부 인증 채널 동기화...",
   "접근 권한 검증 중...",
+  "감시 채널 봉인...",
+  "잔존 신호 정리 중...",
+  "출입 권한 대조...",
+  "이상 없음.",
   "최종 승인됨.",
 ];
 
 export default function App() {
-  const [bootStage, setBootStage] = useState<BootStage>("booting");
+  const [bootStage, setBootStage] = useState<BootStage>("intro");
   const [visibleBootLines, setVisibleBootLines] = useState<string[]>([]);
   const [inputCode, setInputCode] = useState("");
   const [selectedIntel, setSelectedIntel] = useState<IntelEntry | null>(null);
@@ -65,7 +69,11 @@ export default function App() {
 
   const normalizedDatabase = useMemo(() => {
     return intelDatabase.map((item) => ({
-      ...item,
+      code: item.code,
+      title: item.title,
+      subtitle: item.subtitle,
+      image: item.image,
+      text: item.text,
       normalizedCode: item.code.trim().toUpperCase(),
     }));
   }, []);
@@ -79,77 +87,47 @@ export default function App() {
         playPromise.catch(() => {});
       }
     } catch {
-      // ignore
+      //
     }
   };
 
   const startNormalBgm = () => {
     if (!bgmRef.current) return;
-
     try {
       if (poemBgmRef.current) {
         poemBgmRef.current.pause();
         poemBgmRef.current.currentTime = 0;
       }
-
       bgmRef.current.loop = true;
       if (bgmRef.current.paused) {
         bgmRef.current.currentTime = 0;
       }
       bgmRef.current.play().catch(() => {});
     } catch {
-      // ignore
+      //
     }
   };
 
   const startPoemBgm = () => {
     if (!poemBgmRef.current) return;
-
     try {
       if (bgmRef.current) {
         bgmRef.current.pause();
         bgmRef.current.currentTime = 0;
       }
-
       poemBgmRef.current.loop = true;
       if (poemBgmRef.current.paused) {
         poemBgmRef.current.currentTime = 0;
       }
       poemBgmRef.current.play().catch(() => {});
     } catch {
-      // ignore
+      //
     }
   };
 
   const startBgmForMode = (mode: ThemeMode) => {
-    if (mode === "poem") {
-      startPoemBgm();
-    } else {
-      startNormalBgm();
-    }
-  };
-
-  const triggerPoemPulse = () => {
-    setPoemPulse(true);
-    setPoemSweep(true);
-
-    if (poemPulseTimeoutRef.current) {
-      window.clearTimeout(poemPulseTimeoutRef.current);
-    }
-
-    if (poemSweepTimeoutRef.current) {
-      window.clearTimeout(poemSweepTimeoutRef.current);
-    }
-
-    poemPulseTimeoutRef.current = window.setTimeout(() => {
-      setPoemPulse(false);
-      poemPulseTimeoutRef.current = null;
-    }, 700);
-
-    poemSweepTimeoutRef.current = window.setTimeout(() => {
-      setPoemSweep(false);
-      poemSweepTimeoutRef.current = null;
-    }, 900);
+    if (mode === "poem") startPoemBgm();
+    else startNormalBgm();
   };
 
   const playClick = () => {
@@ -158,7 +136,7 @@ export default function App() {
       clickSoundRef.current.currentTime = 0;
       clickSoundRef.current.play().catch(() => {});
     } catch {
-      // ignore
+      //
     }
   };
 
@@ -174,7 +152,7 @@ export default function App() {
       audio.currentTime = Math.random() * 0.03;
       audio.play().catch(() => {});
     } catch {
-      // ignore
+      //
     }
   };
 
@@ -200,7 +178,7 @@ export default function App() {
     try {
       localStorage.setItem(HISTORY_STORAGE_KEY, JSON.stringify(nextHistory));
     } catch {
-      // ignore
+      //
     }
   };
 
@@ -212,9 +190,7 @@ export default function App() {
           title: entry.title,
           openedAt: Date.now(),
         },
-        ...prev.filter(
-          (item) => item.code !== entry.code.trim().toUpperCase()
-        ),
+        ...prev.filter((item) => item.code !== entry.code.trim().toUpperCase()),
       ].slice(0, MAX_HISTORY);
 
       saveHistory(next);
@@ -228,7 +204,7 @@ export default function App() {
     try {
       localStorage.removeItem(HISTORY_STORAGE_KEY);
     } catch {
-      // ignore
+      //
     }
     setStatusText("열람 기록이 삭제되었습니다.");
   };
@@ -272,6 +248,28 @@ export default function App() {
     window.setTimeout(() => {
       stopDeniedAlarm();
     }, 3000);
+  };
+
+  const triggerPoemPulse = () => {
+    setPoemPulse(true);
+    setPoemSweep(true);
+
+    if (poemPulseTimeoutRef.current) {
+      window.clearTimeout(poemPulseTimeoutRef.current);
+    }
+    if (poemSweepTimeoutRef.current) {
+      window.clearTimeout(poemSweepTimeoutRef.current);
+    }
+
+    poemPulseTimeoutRef.current = window.setTimeout(() => {
+      setPoemPulse(false);
+      poemPulseTimeoutRef.current = null;
+    }, 700);
+
+    poemSweepTimeoutRef.current = window.setTimeout(() => {
+      setPoemSweep(false);
+      poemSweepTimeoutRef.current = null;
+    }, 950);
   };
 
   const openDocument = (entry: IntelEntry) => {
@@ -357,7 +355,6 @@ export default function App() {
       if (hasUnlockedAudioRef.current) return;
       hasUnlockedAudioRef.current = true;
 
-      startBgmForMode(themeMode);
       safePlay(bootSoundRef.current, true);
     };
 
@@ -370,27 +367,18 @@ export default function App() {
 
       if (typingTimeoutRef.current) {
         window.clearTimeout(typingTimeoutRef.current);
-        typingTimeoutRef.current = null;
       }
-
       if (openDocumentTimeoutRef.current) {
         window.clearTimeout(openDocumentTimeoutRef.current);
-        openDocumentTimeoutRef.current = null;
       }
-
       if (poemPulseTimeoutRef.current) {
         window.clearTimeout(poemPulseTimeoutRef.current);
-        poemPulseTimeoutRef.current = null;
       }
-
       if (poemSweepTimeoutRef.current) {
         window.clearTimeout(poemSweepTimeoutRef.current);
-        poemSweepTimeoutRef.current = null;
       }
-
       if (deniedLoopRef.current) {
         window.clearInterval(deniedLoopRef.current);
-        deniedLoopRef.current = null;
       }
 
       [
@@ -408,41 +396,56 @@ export default function App() {
           audio.pause();
           audio.src = "";
         } catch {
-          // ignore
+          //
         }
       });
     };
   }, []);
 
   useEffect(() => {
-    let index = 0;
+    let mounted = true;
+    let flowIndex = 0;
 
-    const interval = window.setInterval(() => {
+    const lineTimer = window.setInterval(() => {
+      if (!mounted) return;
+
       setVisibleBootLines((prev) => {
-        if (index < bootLines.length) {
-          return [...prev, bootLines[index]];
-        }
-        return prev;
+        const next = [...prev, bootLines[flowIndex % bootLines.length]];
+        flowIndex += 1;
+        return next.slice(-18);
       });
 
-      if (Math.random() > 0.75) {
+      if (Math.random() > 0.68) {
         setGlitch(true);
-        window.setTimeout(() => setGlitch(false), 90);
+        window.setTimeout(() => setGlitch(false), 80);
       }
+    }, 180);
 
-      index++;
+    const collapseTimer = window.setTimeout(() => {
+      if (!mounted) return;
+      setBootStage("collapse");
+      safePlay(bootSoundRef.current, true);
+    }, 2400);
 
-      if (index >= bootLines.length) {
-        window.clearInterval(interval);
+    const rebootTimer = window.setTimeout(() => {
+      if (!mounted) return;
+      setBootStage("reboot");
+    }, 2920);
 
-        window.setTimeout(() => {
-          setBootStage("ready");
-          setStatusText("접근 승인됨. 코드 입력 대기 중.");
-        }, 700);
-      }
-    }, 900);
+    const readyTimer = window.setTimeout(() => {
+      if (!mounted) return;
+      setBootStage("ready");
+      setStatusText("접근 승인됨. 코드 입력 대기 중.");
+      startNormalBgm();
+    }, 3600);
 
-    return () => window.clearInterval(interval);
+    return () => {
+      mounted = false;
+      window.clearInterval(lineTimer);
+      window.clearTimeout(collapseTimer);
+      window.clearTimeout(rebootTimer);
+      window.clearTimeout(readyTimer);
+    };
   }, []);
 
   useEffect(() => {
@@ -459,137 +462,112 @@ export default function App() {
     return () => window.clearInterval(interval);
   }, []);
 
-  // 🔥 핵심 부분만 보여주는 게 아니라 실제로 필요한 "완성 로직" 포함
-
-useEffect(() => {
-  if (typingTimeoutRef.current) {
-    window.clearTimeout(typingTimeoutRef.current);
-    typingTimeoutRef.current = null;
-  }
-
-  if (!selectedIntel) {
-    setDisplayedText("");
-    return;
-  }
-
-  let cancelled = false;
-  let charIndex = 0;
-  const fullText = selectedIntel.text ?? "";
-  const isPoem =
-    selectedIntel.code.trim().toUpperCase() === POEM_CODE;
-
-  setDisplayedText("");
-
-  // ⭐⭐ p0em 전용 타이밍 설정 ⭐⭐
-  const poemTargetDuration = 26000; // 전체 26초
-  const poemStartDelay = 1800; // 시작 전 숨 고르기
-  const poemEndingDelay = 1200; // 끝 여운
-
-  const poemPlayable =
-    poemTargetDuration - poemStartDelay - poemEndingDelay;
-
-  const startTime = Date.now();
-
-  const typeNext = () => {
-    if (cancelled) return;
-
-    if (charIndex >= fullText.length) {
-      typingTimeoutRef.current = null;
-      return;
-    }
-
-    const nextIndex = charIndex + 1;
-    const nextText = fullText.slice(0, nextIndex);
-    const currentChar = fullText[charIndex] ?? "";
-
-    setDisplayedText(nextText);
-    charIndex = nextIndex;
-
-    // 🔊 타자음
-    if (
-      currentChar.trim() !== "" &&
-      currentChar !== "\n" &&
-      Math.random() > 0.45
-    ) {
-      playTypingSound();
-    }
-
-    if (charIndex >= fullText.length) {
-      typingTimeoutRef.current = null;
-      return;
-    }
-
-    let nextDelay;
-
-    if (isPoem) {
-      // ⭐⭐ 남은 시간 기반 계산 ⭐⭐
-      const elapsed = Date.now() - startTime;
-      const remainingChars = Math.max(
-        1,
-        fullText.length - charIndex
-      );
-
-      const remainingTime = Math.max(
-        100,
-        poemPlayable - elapsed
-      );
-
-      let base = remainingTime / remainingChars;
-
-      // ⭐⭐ 감성 보정 ⭐⭐
-      if (currentChar === "\n") {
-        base *= 3.5;
-      } else if (
-        currentChar === "." ||
-        currentChar === "," ||
-        currentChar === "!" ||
-        currentChar === "?" ||
-        currentChar === "…"
-      ) {
-        base *= 2.2;
-      } else if (currentChar === " ") {
-        base *= 0.7;
-      }
-
-      // ⭐ 랜덤 긴 숨
-      if (Math.random() < 0.14) {
-        base += 200 + Math.random() * 300;
-      }
-
-      nextDelay = base;
-    } else {
-      // 기존 일반 속도
-      nextDelay =
-        currentChar === "\n"
-          ? 55 + Math.random() * 35
-          : currentChar === "." ||
-            currentChar === "," ||
-            currentChar === "!" ||
-            currentChar === "?"
-          ? 45 + Math.random() * 40
-          : 14 + Math.random() * 18;
-    }
-
-    typingTimeoutRef.current = window.setTimeout(
-      typeNext,
-      nextDelay
-    );
-  };
-
-  // ⭐ 시작 딜레이 (p0em 전용)
-  typingTimeoutRef.current = window.setTimeout(
-    typeNext,
-    isPoem ? poemStartDelay : 120
-  );
-
-  return () => {
-    cancelled = true;
+  useEffect(() => {
     if (typingTimeoutRef.current) {
       window.clearTimeout(typingTimeoutRef.current);
       typingTimeoutRef.current = null;
     }
-  };
-}, [selectedIntel]);
+
+    if (!selectedIntel) {
+      setDisplayedText("");
+      return;
+    }
+
+    let cancelled = false;
+    let charIndex = 0;
+    const fullText = selectedIntel.text ?? "";
+    const isPoem = selectedIntel.code.trim().toUpperCase() === POEM_CODE;
+
+    setDisplayedText("");
+
+    const poemTargetDuration = 26000;
+    const poemStartDelay = 1800;
+    const poemEndingDelay = 1200;
+    const poemPlayable = poemTargetDuration - poemStartDelay - poemEndingDelay;
+    const poemStartTime = Date.now();
+
+    const typeNext = () => {
+      if (cancelled) return;
+
+      if (charIndex >= fullText.length) {
+        typingTimeoutRef.current = null;
+        return;
+      }
+
+      const nextIndex = charIndex + 1;
+      const nextText = fullText.slice(0, nextIndex);
+      const currentChar = fullText[charIndex] ?? "";
+
+      setDisplayedText(nextText);
+      charIndex = nextIndex;
+
+      const shouldPlayTyping =
+        currentChar.trim() !== "" &&
+        currentChar !== "\n" &&
+        (Math.random() > 0.5 || charIndex % 4 === 0);
+
+      if (shouldPlayTyping) {
+        playTypingSound();
+      }
+
+      if (charIndex >= fullText.length) {
+        typingTimeoutRef.current = null;
+        return;
+      }
+
+      let nextDelay = 16;
+
+      if (isPoem) {
+        const elapsed = Date.now() - poemStartTime;
+        const remainingChars = Math.max(1, fullText.length - charIndex);
+        const remainingTime = Math.max(100, poemPlayable - elapsed);
+
+        let base = remainingTime / remainingChars;
+
+        if (currentChar === "\n") {
+          base *= 3.6;
+        } else if (
+          currentChar === "." ||
+          currentChar === "," ||
+          currentChar === "!" ||
+          currentChar === "?" ||
+          currentChar === "…"
+        ) {
+          base *= 2.25;
+        } else if (currentChar === " ") {
+          base *= 0.72;
+        }
+
+        if (Math.random() < 0.14) {
+          base += 200 + Math.random() * 300;
+        }
+
+        nextDelay = base;
+      } else {
+        nextDelay =
+          currentChar === "\n"
+            ? 55 + Math.random() * 35
+            : currentChar === "." ||
+              currentChar === "," ||
+              currentChar === "!" ||
+              currentChar === "?"
+            ? 45 + Math.random() * 40
+            : 14 + Math.random() * 18;
+      }
+
+      typingTimeoutRef.current = window.setTimeout(typeNext, nextDelay);
+    };
+
+    typingTimeoutRef.current = window.setTimeout(typeNext, isPoem ? 1800 : 120);
+
+    return () => {
+      cancelled = true;
+      if (typingTimeoutRef.current) {
+        window.clearTimeout(typingTimeoutRef.current);
+        typingTimeoutRef.current = null;
+      }
+    };
+  }, [selectedIntel]);
 
   const handleSubmit = () => {
     startBgmForMode(themeMode);
@@ -602,9 +580,7 @@ useEffect(() => {
       return;
     }
 
-    const found = normalizedDatabase.find(
-      (item) => item.normalizedCode === code
-    );
+    const found = normalizedDatabase.find((item) => item.normalizedCode === code);
 
     if (found) {
       openDocument(found);
@@ -671,9 +647,7 @@ useEffect(() => {
     startBgmForMode(themeMode);
     playClick();
 
-    const found = normalizedDatabase.find(
-      (item) => item.normalizedCode === code
-    );
+    const found = normalizedDatabase.find((item) => item.normalizedCode === code);
 
     if (!found) {
       setStatusText("기록된 문서를 현재 데이터베이스에서 찾을 수 없습니다.");
@@ -684,6 +658,7 @@ useEffect(() => {
   };
 
   const isPoemTheme = themeMode === "poem";
+  const showIntroOverlay = bootStage !== "ready";
 
   return (
     <div
@@ -694,15 +669,14 @@ useEffect(() => {
           : "linear-gradient(180deg, #06111f 0%, #040b14 100%)",
         minHeight: "100vh",
         color: "#ffffff",
-        padding: "20px 14px 40px",
+        padding: showIntroOverlay ? "0" : "20px 14px 40px",
         fontFamily: "monospace",
         display: "flex",
         flexDirection: "column",
         alignItems: "center",
         boxSizing: "border-box",
         overflow: "hidden",
-        transition:
-          "background 0.9s ease, filter 0.4s ease, transform 0.25s ease",
+        transition: "background 0.9s ease, filter 0.4s ease, transform 0.25s ease, padding 0.4s ease",
         filter: poemPulse
           ? "brightness(1.25) saturate(1.28) hue-rotate(-10deg)"
           : isPoemTheme
@@ -711,6 +685,188 @@ useEffect(() => {
         transform: poemPulse ? "scale(1.008)" : "scale(1)",
       }}
     >
+      {showIntroOverlay && (
+        <div
+          style={{
+            position: "absolute",
+            inset: 0,
+            zIndex: 20,
+            background: "#03070d",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            overflow: "hidden",
+          }}
+        >
+          <div
+            style={{
+              position: "absolute",
+              inset: 0,
+              background:
+                "radial-gradient(circle at 50% 45%, rgba(160,205,255,0.13) 0%, rgba(80,140,220,0.08) 18%, rgba(0,0,0,0) 55%)",
+              opacity: bootStage === "collapse" ? 0.35 : 1,
+              transition: "opacity 0.2s ease",
+            }}
+          />
+
+          <div
+            style={{
+              position: "absolute",
+              inset: 0,
+              opacity: 0.16,
+              background:
+                "repeating-linear-gradient(to bottom, rgba(255,255,255,0.12) 0px, rgba(255,255,255,0.12) 1px, transparent 2px, transparent 4px)",
+              mixBlendMode: "screen",
+            }}
+          />
+
+          <div
+            style={{
+              position: "absolute",
+              inset: 0,
+              pointerEvents: "none",
+              backgroundImage:
+                "radial-gradient(circle at 20% 20%, rgba(255,255,255,0.18) 0 1px, transparent 1px), radial-gradient(circle at 80% 35%, rgba(255,255,255,0.12) 0 1px, transparent 1px), radial-gradient(circle at 45% 70%, rgba(255,255,255,0.14) 0 1px, transparent 1px)",
+              backgroundSize: "120px 120px, 160px 160px, 140px 140px",
+              animation: "noiseMove 0.22s steps(2) infinite",
+              opacity: 0.06,
+            }}
+          />
+
+          <div
+            style={{
+              position: "absolute",
+              left: 0,
+              right: 0,
+              top: "50%",
+              height: bootStage === "collapse" ? "2px" : "100%",
+              transform:
+                bootStage === "collapse"
+                  ? "translateY(-50%) scaleY(1) scaleX(0.08)"
+                  : bootStage === "reboot"
+                  ? "translateY(-50%) scaleY(1) scaleX(1)"
+                  : "translateY(-50%) scaleY(1) scaleX(1)",
+              opacity: bootStage === "collapse" ? 1 : bootStage === "reboot" ? 0.75 : 1,
+              transition:
+                "transform 0.24s ease-in, height 0.24s ease-in, opacity 0.18s ease-in",
+              boxShadow:
+                bootStage === "collapse"
+                  ? "0 0 18px rgba(180,230,255,0.95), 0 0 44px rgba(120,180,255,0.7)"
+                  : "none",
+              background:
+                bootStage === "collapse"
+                  ? "linear-gradient(90deg, transparent 0%, rgba(255,255,255,0.9) 18%, rgba(145,205,255,1) 50%, rgba(255,255,255,0.9) 82%, transparent 100%)"
+                  : "transparent",
+              pointerEvents: "none",
+            }}
+          />
+
+          <div
+            style={{
+              position: "relative",
+              width: "100%",
+              maxWidth: "980px",
+              height: "100vh",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              transform:
+                bootStage === "collapse"
+                  ? "scaleY(0.03) scaleX(0.92)"
+                  : bootStage === "reboot"
+                  ? "scaleY(1.08) scaleX(1.02)"
+                  : "scale(1)",
+              opacity: bootStage === "collapse" ? 0.45 : bootStage === "reboot" ? 0.92 : 1,
+              transition: "transform 0.24s ease-in, opacity 0.22s ease-in",
+              filter: glitch
+                ? "contrast(1.22) brightness(1.12) saturate(0.95)"
+                : "none",
+            }}
+          >
+            <div
+              style={{
+                position: "absolute",
+                inset: 0,
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                pointerEvents: "none",
+              }}
+            >
+              <div
+                style={{
+                  width: "min(780px, 92vw)",
+                  height: "min(420px, 58vh)",
+                  position: "relative",
+                  overflow: "hidden",
+                  maskImage: "radial-gradient(circle at center, black 52%, transparent 100%)",
+                  WebkitMaskImage: "radial-gradient(circle at center, black 52%, transparent 100%)",
+                }}
+              >
+                {visibleBootLines.map((line, index) => {
+                  const row = index % 9;
+                  const leftBase = (index * 11) % 70;
+                  return (
+                    <div
+                      key={`${line}-${index}`}
+                      style={{
+                        position: "absolute",
+                        left: `${leftBase}%`,
+                        top: `${10 + row * 10}%`,
+                        whiteSpace: "nowrap",
+                        color: index % 2 === 0 ? "rgba(175,215,255,0.26)" : "rgba(255,255,255,0.14)",
+                        fontSize: row % 2 === 0 ? "13px" : "12px",
+                        letterSpacing: "1px",
+                        textShadow: "0 0 10px rgba(130,185,255,0.16)",
+                        animation: `bootFlow ${3.4 + (index % 4) * 0.5}s linear forwards`,
+                      }}
+                    >
+                      &gt; {line}
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+
+            <div
+              style={{
+                position: "relative",
+                zIndex: 2,
+                display: "flex",
+                flexDirection: "column",
+                alignItems: "center",
+                gap: "18px",
+                opacity: bootStage === "collapse" ? 0.75 : 1,
+              }}
+            >
+              <img
+                src="logo.png"
+                alt="agency logo"
+                style={{
+                  width: "min(180px, 42vw)",
+                  filter:
+                    "brightness(1.24) drop-shadow(0 0 16px rgba(160,220,255,0.28))",
+                  transform: glitch ? "translateX(2px)" : "none",
+                }}
+              />
+              <div
+                style={{
+                  fontSize: "clamp(16px, 2.8vw, 22px)",
+                  letterSpacing: "5px",
+                  textAlign: "center",
+                  color: "#eef6ff",
+                  textShadow: glitch
+                    ? "2px 0 rgba(255,0,70,0.35), -2px 0 rgba(80,180,255,0.35)"
+                    : "0 0 16px rgba(170,220,255,0.16)",
+                }}
+              >
+                NEW SAN DIEGO INTELLIGENCE AGENCY
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       <div
         style={{
           position: "absolute",
@@ -780,582 +936,496 @@ useEffect(() => {
               : "contrast(1.22) brightness(1.08) saturate(0.95)"
             : "none",
           opacity: screenFlicker ? 0.93 : 1,
-          transition:
-            "transform 0.05s linear, opacity 0.05s linear, filter 0.05s linear",
+          transition: "transform 0.05s linear, opacity 0.05s linear, filter 0.05s linear",
+          paddingTop: showIntroOverlay ? "0" : "8px",
         }}
       >
-        <h2
-          style={{
-            color: "#ffffff",
-            letterSpacing: "2px",
-            textAlign: "center",
-            margin: "8px 0 0",
-            fontSize: "clamp(18px, 4vw, 28px)",
-            textShadow: glitch
-              ? isPoemTheme
-                ? "2px 0 rgba(255,180,220,0.45), -2px 0 rgba(255,245,250,0.32)"
-                : "2px 0 rgba(255,0,70,0.35), -2px 0 rgba(80,180,255,0.35)"
-              : isPoemTheme
-              ? "0 0 18px rgba(255, 210, 235, 0.2)"
-              : "0 0 12px rgba(180,220,255,0.06)",
-            transition: "text-shadow 0.35s ease",
-          }}
-        >
-          NEW SAN DIEGO INTELLIGENCE AGENCY
-        </h2>
-
-        <div
-          style={{
-            marginTop: "22px",
-            width: "100%",
-            background: isPoemTheme
-              ? "rgba(88, 40, 73, 0.72)"
-              : "rgba(10, 20, 35, 0.7)",
-            border: isPoemTheme
-              ? "1px solid rgba(255, 220, 240, 0.24)"
-              : "1px solid rgba(160, 200, 255, 0.18)",
-            borderRadius: "12px",
-            padding: "16px",
-            boxSizing: "border-box",
-            boxShadow: isPoemTheme
-              ? "0 0 34px rgba(255, 180, 220, 0.12)"
-              : "0 0 24px rgba(0, 0, 0, 0.28)",
-            position: "relative",
-            overflow: "hidden",
-            transition:
-              "background 0.45s ease, border 0.45s ease, box-shadow 0.45s ease",
-          }}
-        >
-          <div
-            style={{
-              position: "absolute",
-              inset: 0,
-              pointerEvents: "none",
-              background: isPoemTheme
-                ? "linear-gradient(180deg, rgba(255,255,255,0.05) 0%, transparent 22%, transparent 78%, rgba(255,255,255,0.04) 100%)"
-                : "linear-gradient(180deg, rgba(255,255,255,0.02) 0%, transparent 22%, transparent 78%, rgba(255,255,255,0.02) 100%)",
-            }}
-          />
-
-          <div
-            style={{
-              color: isPoemTheme ? "#ffd4ea" : "#9ec2ff",
-              fontSize: "13px",
-              marginBottom: "10px",
-              letterSpacing: "1px",
-              transition: "color 0.35s ease",
-            }}
-          >
-            SYSTEM LOG
-          </div>
-
-          <div
-            style={{
-              minHeight: "110px",
-              lineHeight: "1.7",
-              fontSize: "14px",
-              color: isPoemTheme ? "#fff2fa" : "#d7e6ff",
-              wordBreak: "break-word",
-              textShadow: isPoemTheme
-                ? "0 0 12px rgba(255, 220, 238, 0.08)"
-                : "0 0 10px rgba(125, 180, 255, 0.05)",
-              transition: "color 0.35s ease, text-shadow 0.35s ease",
-            }}
-          >
-            {visibleBootLines.map((line, index) => (
-              <div key={index}>&gt; {line}</div>
-            ))}
-          </div>
-        </div>
-
-        {bootStage === "ready" && (
-          <div
-            style={{
-              marginTop: "18px",
-              width: "100%",
-              display: "flex",
-              flexWrap: "wrap",
-              gap: "10px",
-              justifyContent: "center",
-            }}
-          >
-            <input
-              value={inputCode}
-              onChange={(e) => setInputCode(e.target.value)}
-              onFocus={() => {
-                playClick();
-                startBgmForMode(themeMode);
-              }}
-              onKeyDown={(e) => {
-                if (e.key === "Enter") handleSubmit();
-              }}
-              placeholder="코드 입력"
+        {!showIntroOverlay && (
+          <>
+            <h2
               style={{
-                flex: "1 1 240px",
-                minWidth: "0",
-                maxWidth: "420px",
-                padding: "12px 14px",
-                borderRadius: "10px",
-                border: isPoemTheme
-                  ? "1px solid rgba(255, 220, 240, 0.28)"
-                  : "1px solid rgba(160, 200, 255, 0.2)",
-                background: isPoemTheme
-                  ? "rgba(72, 31, 60, 0.95)"
-                  : "rgba(8, 18, 32, 0.95)",
                 color: "#ffffff",
-                outline: "none",
-                fontFamily: "monospace",
-                fontSize: "15px",
-                boxSizing: "border-box",
-                boxShadow: isPoemTheme
-                  ? "inset 0 0 16px rgba(255, 215, 236, 0.08)"
-                  : "inset 0 0 10px rgba(0,0,0,0.28)",
-                transition:
-                  "border 0.35s ease, background 0.35s ease, box-shadow 0.35s ease",
-              }}
-            />
-
-            <button
-              onClick={handleSubmit}
-              style={{
-                padding: "12px 18px",
-                borderRadius: "10px",
-                border: isPoemTheme
-                  ? "1px solid rgba(255, 220, 240, 0.28)"
-                  : "1px solid rgba(160, 200, 255, 0.25)",
-                background: isPoemTheme ? "#8d4a79" : "#0f2340",
-                color: "#ffffff",
-                cursor: "pointer",
-                fontFamily: "monospace",
-                fontSize: "14px",
-                boxShadow: "0 0 12px rgba(0,0,0,0.18)",
-                transition: "background 0.35s ease, border 0.35s ease",
+                letterSpacing: "2px",
+                textAlign: "center",
+                margin: "8px 0 0",
+                fontSize: "clamp(18px, 4vw, 28px)",
+                textShadow: glitch
+                  ? isPoemTheme
+                    ? "2px 0 rgba(255,180,220,0.45), -2px 0 rgba(255,245,250,0.32)"
+                    : "2px 0 rgba(255,0,70,0.35), -2px 0 rgba(80,180,255,0.35)"
+                  : isPoemTheme
+                  ? "0 0 18px rgba(255, 210, 235, 0.2)"
+                  : "0 0 12px rgba(180,220,255,0.06)",
               }}
             >
-              확인
-            </button>
+              NEW SAN DIEGO INTELLIGENCE AGENCY
+            </h2>
 
-            {selectedIntel && (
+            <div
+              style={{
+                marginTop: "22px",
+                width: "100%",
+                display: "flex",
+                flexWrap: "wrap",
+                gap: "10px",
+                justifyContent: "center",
+              }}
+            >
+              <input
+                value={inputCode}
+                onChange={(e) => setInputCode(e.target.value)}
+                onFocus={() => {
+                  playClick();
+                  startBgmForMode(themeMode);
+                }}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") handleSubmit();
+                }}
+                placeholder="코드 입력"
+                style={{
+                  flex: "1 1 240px",
+                  minWidth: "0",
+                  maxWidth: "420px",
+                  padding: "12px 14px",
+                  borderRadius: "10px",
+                  border: isPoemTheme
+                    ? "1px solid rgba(255, 220, 240, 0.28)"
+                    : "1px solid rgba(160, 200, 255, 0.2)",
+                  background: isPoemTheme
+                    ? "rgba(72, 31, 60, 0.95)"
+                    : "rgba(8, 18, 32, 0.95)",
+                  color: "#ffffff",
+                  outline: "none",
+                  fontFamily: "monospace",
+                  fontSize: "15px",
+                  boxSizing: "border-box",
+                  boxShadow: isPoemTheme
+                    ? "inset 0 0 16px rgba(255, 215, 236, 0.08)"
+                    : "inset 0 0 10px rgba(0,0,0,0.28)",
+                }}
+              />
+
               <button
-                onClick={handleReset}
+                onClick={handleSubmit}
                 style={{
                   padding: "12px 18px",
                   borderRadius: "10px",
                   border: isPoemTheme
-                    ? "1px solid rgba(255, 235, 245, 0.22)"
-                    : "1px solid rgba(255, 255, 255, 0.15)",
-                  background: isPoemTheme ? "#63324f" : "#122b1d",
-                  color: isPoemTheme ? "#fff0f8" : "#dfffe8",
+                    ? "1px solid rgba(255, 220, 240, 0.28)"
+                    : "1px solid rgba(160, 200, 255, 0.25)",
+                  background: isPoemTheme ? "#8d4a79" : "#0f2340",
+                  color: "#ffffff",
                   cursor: "pointer",
                   fontFamily: "monospace",
                   fontSize: "14px",
                   boxShadow: "0 0 12px rgba(0,0,0,0.18)",
-                  transition: "background 0.35s ease, border 0.35s ease",
                 }}
               >
-                문서 닫기
+                확인
               </button>
-            )}
-          </div>
-        )}
 
-        <div
-          style={{
-            marginTop: "12px",
-            color: isDenied
-              ? "#ff3a3a"
-              : statusText === "ACCESS DENIED"
-              ? "#ff8b8b"
-              : isPoemTheme
-              ? "#ffe5f3"
-              : "#bcd4ff",
-            fontSize: "14px",
-            textAlign: "center",
-            letterSpacing: "0.5px",
-            minHeight: "22px",
-            wordBreak: "break-word",
-            animation: isDenied ? "deniedFlash 0.28s infinite" : "none",
-            textShadow: isDenied
-              ? "0 0 12px rgba(255, 0, 0, 0.45)"
-              : isPoemTheme
-              ? "0 0 12px rgba(255, 215, 235, 0.18)"
-              : "none",
-            transition: "color 0.35s ease, text-shadow 0.35s ease",
-          }}
-        >
-          {statusText}
-        </div>
-
-        {bootStage === "ready" && !selectedIntel && (
-          <div
-            style={{
-              width: "100%",
-              marginTop: "24px",
-              background: isPoemTheme
-                ? "rgba(86, 38, 72, 0.86)"
-                : "rgba(9, 19, 33, 0.84)",
-              border: isPoemTheme
-                ? "1px solid rgba(255, 220, 240, 0.18)"
-                : "1px solid rgba(160, 200, 255, 0.16)",
-              borderRadius: "14px",
-              padding: "16px",
-              boxSizing: "border-box",
-              boxShadow: isPoemTheme
-                ? "0 0 28px rgba(255, 180, 220, 0.1)"
-                : "0 0 24px rgba(0, 0, 0, 0.22)",
-              transition:
-                "background 0.4s ease, border 0.4s ease, box-shadow 0.4s ease",
-            }}
-          >
-            <div
-              style={{
-                display: "flex",
-                justifyContent: "space-between",
-                alignItems: "center",
-                gap: "10px",
-                marginBottom: "12px",
-                flexWrap: "wrap",
-              }}
-            >
-              <div
-                style={{
-                  color: isPoemTheme ? "#ffd4ea" : "#9ec2ff",
-                  fontSize: "13px",
-                  letterSpacing: "1.3px",
-                  transition: "color 0.35s ease",
-                }}
-              >
-                RECENT ACCESS LOG
-              </div>
-
-              <button
-                onClick={clearHistory}
-                style={{
-                  padding: "8px 12px",
-                  borderRadius: "8px",
-                  border: "1px solid rgba(255,255,255,0.12)",
-                  background: isPoemTheme
-                    ? "rgba(120,45,80,0.72)"
-                    : "rgba(70,20,20,0.7)",
-                  color: isPoemTheme ? "#ffe7f3" : "#ffd0d0",
-                  cursor: "pointer",
-                  fontFamily: "monospace",
-                  fontSize: "12px",
-                }}
-              >
-                기록 삭제
-              </button>
+              {selectedIntel && (
+                <button
+                  onClick={handleReset}
+                  style={{
+                    padding: "12px 18px",
+                    borderRadius: "10px",
+                    border: isPoemTheme
+                      ? "1px solid rgba(255, 235, 245, 0.22)"
+                      : "1px solid rgba(255, 255, 255, 0.15)",
+                    background: isPoemTheme ? "#63324f" : "#122b1d",
+                    color: isPoemTheme ? "#fff0f8" : "#dfffe8",
+                    cursor: "pointer",
+                    fontFamily: "monospace",
+                    fontSize: "14px",
+                    boxShadow: "0 0 12px rgba(0,0,0,0.18)",
+                  }}
+                >
+                  문서 닫기
+                </button>
+              )}
             </div>
 
             <div
               style={{
-                marginBottom: "12px",
-                color: isPoemTheme ? "#ffe5f3" : "#bcd4ff",
-                fontSize: "12px",
-                letterSpacing: "0.8px",
-                lineHeight: "1.6",
-                transition: "color 0.35s ease",
+                marginTop: "12px",
+                color: isDenied
+                  ? "#ff3a3a"
+                  : statusText === "ACCESS DENIED"
+                  ? "#ff8b8b"
+                  : isPoemTheme
+                  ? "#ffe5f3"
+                  : "#bcd4ff",
+                fontSize: "14px",
+                textAlign: "center",
+                letterSpacing: "0.5px",
+                minHeight: "22px",
+                wordBreak: "break-word",
+                animation: isDenied ? "deniedFlash 0.28s infinite" : "none",
+                textShadow: isDenied
+                  ? "0 0 12px rgba(255, 0, 0, 0.45)"
+                  : isPoemTheme
+                  ? "0 0 12px rgba(255, 215, 235, 0.18)"
+                  : "none",
               }}
             >
-              열람한 기록:{" "}
-              <span style={{ color: "#ffffff" }}>{history.length}</span>
-              {" / "}
-              현재 존재하는 기록:{" "}
-              <span style={{ color: isPoemTheme ? "#ffd4ea" : "#9ec2ff" }}>
-                {normalizedDatabase.length}
-              </span>
+              {statusText}
             </div>
 
-            {history.length === 0 ? (
-              <div
-                style={{
-                  color: isPoemTheme ? "#f4d8e8" : "#8ea8cf",
-                  fontSize: "13px",
-                  lineHeight: "1.7",
-                  transition: "color 0.35s ease",
-                }}
-              >
-                아직 이 기기에서 열람한 문서 기록이 없습니다.
-              </div>
-            ) : (
-              <div
-                style={{
-                  display: "grid",
-                  gap: "10px",
-                }}
-              >
-                {history.map((item) => (
-                  <button
-                    key={item.code}
-                    onClick={() => handleOpenFromHistory(item.code)}
+            {!selectedIntel && (
+              <>
+                <div
+                  style={{
+                    marginTop: "64px",
+                    display: "flex",
+                    flexDirection: "column",
+                    alignItems: "center",
+                    opacity: 0.9,
+                    textAlign: "center",
+                  }}
+                >
+                  <img
+                    src="logo.png"
+                    alt="agency logo"
                     style={{
-                      width: "100%",
-                      textAlign: "left",
-                      background: isPoemTheme
-                        ? "rgba(62, 26, 50, 0.94)"
-                        : "rgba(6, 14, 26, 0.92)",
-                      border: isPoemTheme
-                        ? "1px solid rgba(255, 220, 240, 0.14)"
-                        : "1px solid rgba(160, 200, 255, 0.14)",
-                      borderRadius: "10px",
-                      padding: "12px",
-                      color: "#eaf2ff",
-                      cursor: "pointer",
-                      fontFamily: "monospace",
-                      transition: "background 0.35s ease, border 0.35s ease",
+                      width: "min(160px, 42vw)",
+                      marginBottom: "20px",
+                      filter: isPoemTheme
+                        ? "brightness(1.34) drop-shadow(0 0 16px rgba(255,210,235,0.28))"
+                        : "brightness(1.2)",
+                    }}
+                  />
+
+                  <div
+                    style={{
+                      fontSize: "14px",
+                      letterSpacing: "3px",
+                      color: isPoemTheme ? "#ffe6f3" : "#bcd4ff",
+                      wordBreak: "break-word",
+                      textShadow: isPoemTheme
+                        ? "0 0 12px rgba(255, 210, 235, 0.18)"
+                        : "none",
+                    }}
+                  >
+                    뉴 샌디에이고 데이터 체계
+                  </div>
+                </div>
+
+                <div
+                  style={{
+                    width: "100%",
+                    marginTop: "24px",
+                    background: isPoemTheme
+                      ? "rgba(86, 38, 72, 0.86)"
+                      : "rgba(9, 19, 33, 0.84)",
+                    border: isPoemTheme
+                      ? "1px solid rgba(255, 220, 240, 0.18)"
+                      : "1px solid rgba(160, 200, 255, 0.16)",
+                    borderRadius: "14px",
+                    padding: "16px",
+                    boxSizing: "border-box",
+                    boxShadow: isPoemTheme
+                      ? "0 0 28px rgba(255, 180, 220, 0.1)"
+                      : "0 0 24px rgba(0, 0, 0, 0.22)",
+                  }}
+                >
+                  <div
+                    style={{
+                      display: "flex",
+                      justifyContent: "space-between",
+                      alignItems: "center",
+                      gap: "10px",
+                      marginBottom: "12px",
+                      flexWrap: "wrap",
                     }}
                   >
                     <div
                       style={{
-                        display: "flex",
-                        justifyContent: "space-between",
-                        gap: "10px",
-                        flexWrap: "wrap",
+                        color: isPoemTheme ? "#ffd4ea" : "#9ec2ff",
+                        fontSize: "13px",
+                        letterSpacing: "1.3px",
                       }}
                     >
-                      <div
-                        style={{
-                          fontSize: "14px",
-                          color: "#ffffff",
-                        }}
-                      >
-                        {item.title}
-                      </div>
-                      <div
-                        style={{
-                          fontSize: "12px",
-                          color: isPoemTheme ? "#f2cbe0" : "#8ea8cf",
-                          transition: "color 0.35s ease",
-                        }}
-                      >
-                        {formatOpenedTime(item.openedAt)}
-                      </div>
+                      RECENT ACCESS LOG
                     </div>
 
+                    <button
+                      onClick={clearHistory}
+                      style={{
+                        padding: "8px 12px",
+                        borderRadius: "8px",
+                        border: "1px solid rgba(255,255,255,0.12)",
+                        background: isPoemTheme
+                          ? "rgba(120,45,80,0.72)"
+                          : "rgba(70,20,20,0.7)",
+                        color: isPoemTheme ? "#ffe7f3" : "#ffd0d0",
+                        cursor: "pointer",
+                        fontFamily: "monospace",
+                        fontSize: "12px",
+                      }}
+                    >
+                      기록 삭제
+                    </button>
+                  </div>
+
+                  <div
+                    style={{
+                      marginBottom: "12px",
+                      color: isPoemTheme ? "#ffe5f3" : "#bcd4ff",
+                      fontSize: "12px",
+                      letterSpacing: "0.8px",
+                      lineHeight: "1.6",
+                    }}
+                  >
+                    열람한 기록: <span style={{ color: "#ffffff" }}>{history.length}</span>
+                    {" / "}
+                    현재 존재하는 기록:{" "}
+                    <span style={{ color: isPoemTheme ? "#ffd4ea" : "#9ec2ff" }}>
+                      {normalizedDatabase.length}
+                    </span>
+                  </div>
+
+                  {history.length === 0 ? (
                     <div
                       style={{
-                        marginTop: "6px",
-                        fontSize: "12px",
-                        color: isPoemTheme ? "#ffd4ea" : "#9ec2ff",
-                        letterSpacing: "1px",
-                        transition: "color 0.35s ease",
+                        color: isPoemTheme ? "#f4d8e8" : "#8ea8cf",
+                        fontSize: "13px",
+                        lineHeight: "1.7",
                       }}
                     >
-                      CODE: {item.code}
+                      아직 이 기기에서 열람한 문서 기록이 없습니다.
                     </div>
-                  </button>
-                ))}
-              </div>
+                  ) : (
+                    <div
+                      style={{
+                        display: "grid",
+                        gap: "10px",
+                      }}
+                    >
+                      {history.map((item) => (
+                        <button
+                          key={item.code}
+                          onClick={() => handleOpenFromHistory(item.code)}
+                          style={{
+                            width: "100%",
+                            textAlign: "left",
+                            background: isPoemTheme
+                              ? "rgba(62, 26, 50, 0.94)"
+                              : "rgba(6, 14, 26, 0.92)",
+                            border: isPoemTheme
+                              ? "1px solid rgba(255, 220, 240, 0.14)"
+                              : "1px solid rgba(160, 200, 255, 0.14)",
+                            borderRadius: "10px",
+                            padding: "12px",
+                            color: "#eaf2ff",
+                            cursor: "pointer",
+                            fontFamily: "monospace",
+                          }}
+                        >
+                          <div
+                            style={{
+                              display: "flex",
+                              justifyContent: "space-between",
+                              gap: "10px",
+                              flexWrap: "wrap",
+                            }}
+                          >
+                            <div
+                              style={{
+                                fontSize: "14px",
+                                color: "#ffffff",
+                              }}
+                            >
+                              {item.title}
+                            </div>
+                            <div
+                              style={{
+                                fontSize: "12px",
+                                color: isPoemTheme ? "#f2cbe0" : "#8ea8cf",
+                              }}
+                            >
+                              {formatOpenedTime(item.openedAt)}
+                            </div>
+                          </div>
+
+                          <div
+                            style={{
+                              marginTop: "6px",
+                              fontSize: "12px",
+                              color: isPoemTheme ? "#ffd4ea" : "#9ec2ff",
+                              letterSpacing: "1px",
+                            }}
+                          >
+                            CODE: {item.code}
+                          </div>
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </>
             )}
-          </div>
-        )}
 
-        {selectedIntel && (
-          <div
-            style={{
-              marginTop: "26px",
-              width: "100%",
-              background: isPoemTheme
-                ? "rgba(90, 42, 74, 0.9)"
-                : "rgba(9, 19, 33, 0.9)",
-              border: isPoemTheme
-                ? "1px solid rgba(255, 220, 240, 0.22)"
-                : "1px solid rgba(160, 200, 255, 0.18)",
-              borderRadius: "14px",
-              padding: "18px",
-              boxSizing: "border-box",
-              boxShadow: isPoemTheme
-                ? "0 0 38px rgba(255, 180, 225, 0.14)"
-                : "0 0 30px rgba(0, 0, 0, 0.35)",
-              position: "relative",
-              overflow: "hidden",
-              transition:
-                "background 0.45s ease, border 0.45s ease, box-shadow 0.45s ease",
-            }}
-          >
-            <div
-              style={{
-                position: "absolute",
-                inset: 0,
-                pointerEvents: "none",
-                background: isPoemTheme
-                  ? "linear-gradient(180deg, rgba(255,255,255,0.04) 0%, transparent 24%, transparent 76%, rgba(255,255,255,0.03) 100%)"
-                  : "linear-gradient(180deg, rgba(255,255,255,0.015) 0%, transparent 24%, transparent 76%, rgba(255,255,255,0.015) 100%)",
-              }}
-            />
-
-            <div
-              style={{
-                textAlign: "center",
-                marginBottom: "18px",
-                position: "relative",
-                zIndex: 1,
-              }}
-            >
-              <h3
-                style={{
-                  margin: "0 0 8px",
-                  fontSize: "clamp(20px, 4.5vw, 28px)",
-                  color: "#ffffff",
-                  wordBreak: "break-word",
-                  textShadow: isPoemTheme
-                    ? "0 0 16px rgba(255, 215, 235, 0.18)"
-                    : "none",
-                }}
-              >
-                {selectedIntel.title}
-              </h3>
-
-              <p
-                style={{
-                  margin: 0,
-                  color: isPoemTheme ? "#ffe6f3" : "#bcd4ff",
-                  fontSize: "14px",
-                  lineHeight: "1.6",
-                  wordBreak: "break-word",
-                  transition: "color 0.35s ease",
-                }}
-              >
-                {selectedIntel.subtitle}
-              </p>
-            </div>
-
-            <div
-              style={{
-                display: "flex",
-                justifyContent: "center",
-                marginBottom: "18px",
-                position: "relative",
-                zIndex: 1,
-              }}
-            >
-              <img
-                src={selectedIntel.image}
-                alt={selectedIntel.title}
-                style={{
-                  width: "100%",
-                  maxWidth: "320px",
-                  borderRadius: "12px",
-                  border: isPoemTheme
-                    ? "1px solid rgba(255, 220, 240, 0.26)"
-                    : "1px solid rgba(160, 200, 255, 0.18)",
-                  objectFit: "cover",
-                  display: "block",
-                  boxShadow: isPoemTheme
-                    ? "0 0 24px rgba(255, 170, 215, 0.18), 0 0 48px rgba(255, 200, 228, 0.08)"
-                    : "none",
-                  filter: isPoemTheme
-                    ? "brightness(1.06) saturate(1.12)"
-                    : "none",
-                  transition:
-                    "border 0.35s ease, box-shadow 0.35s ease, filter 0.35s ease",
-                }}
-              />
-            </div>
-
-            <div
-              style={{
-                border: isPoemTheme
-                  ? "1px solid rgba(255, 220, 240, 0.18)"
-                  : "1px solid rgba(160, 200, 255, 0.15)",
-                borderRadius: "12px",
-                background: isPoemTheme
-                  ? "rgba(50, 18, 40, 0.95)"
-                  : "rgba(4, 11, 20, 0.95)",
-                padding: "14px",
-                maxHeight: "50vh",
-                overflowY: "auto",
-                overflowX: "hidden",
-                boxSizing: "border-box",
-                position: "relative",
-                zIndex: 1,
-                transition: "border 0.35s ease, background 0.35s ease",
-              }}
-            >
+            {selectedIntel && (
               <div
                 style={{
-                  color: isPoemTheme ? "#ffd4ea" : "#8fb7ff",
-                  fontSize: "12px",
-                  marginBottom: "10px",
-                  letterSpacing: "1.5px",
-                  transition: "color 0.35s ease",
+                  marginTop: "26px",
+                  width: "100%",
+                  background: isPoemTheme
+                    ? "rgba(90, 42, 74, 0.9)"
+                    : "rgba(9, 19, 33, 0.9)",
+                  border: isPoemTheme
+                    ? "1px solid rgba(255, 220, 240, 0.22)"
+                    : "1px solid rgba(160, 200, 255, 0.18)",
+                  borderRadius: "14px",
+                  padding: "18px",
+                  boxSizing: "border-box",
+                  boxShadow: isPoemTheme
+                    ? "0 0 38px rgba(255, 180, 225, 0.14)"
+                    : "0 0 30px rgba(0, 0, 0, 0.35)",
+                  position: "relative",
+                  overflow: "hidden",
                 }}
               >
-                DOCUMENT CONTENT
-              </div>
-
-              <pre
-                style={{
-                  margin: 0,
-                  whiteSpace: "pre-wrap",
-                  wordBreak: "break-word",
-                  overflowWrap: "break-word",
-                  textAlign: "left",
-                  maxWidth: "100%",
-                  fontSize: "14px",
-                  lineHeight: "1.78",
-                  color: isPoemTheme ? "#fff6fb" : "#eaf2ff",
-                  textShadow: isPoemTheme
-                    ? "0 0 10px rgba(255, 220, 238, 0.08)"
-                    : "0 0 8px rgba(180, 220, 255, 0.04)",
-                  transition: "color 0.35s ease, text-shadow 0.35s ease",
-                }}
-              >
-                {displayedText}
-                <span
+                <div
                   style={{
-                    display: "inline-block",
-                    width: "8px",
-                    marginLeft: "2px",
-                    animation: "blink 1s step-end infinite",
+                    position: "absolute",
+                    inset: 0,
+                    pointerEvents: "none",
+                    background: isPoemTheme
+                      ? "linear-gradient(180deg, rgba(255,255,255,0.04) 0%, transparent 24%, transparent 76%, rgba(255,255,255,0.03) 100%)"
+                      : "linear-gradient(180deg, rgba(255,255,255,0.015) 0%, transparent 24%, transparent 76%, rgba(255,255,255,0.015) 100%)",
+                  }}
+                />
+
+                <div
+                  style={{
+                    textAlign: "center",
+                    marginBottom: "18px",
+                    position: "relative",
+                    zIndex: 1,
                   }}
                 >
-                  █
-                </span>
-              </pre>
-            </div>
-          </div>
-        )}
+                  <h3
+                    style={{
+                      margin: "0 0 8px",
+                      fontSize: "clamp(20px, 4.5vw, 28px)",
+                      color: "#ffffff",
+                      wordBreak: "break-word",
+                      textShadow: isPoemTheme
+                        ? "0 0 16px rgba(255, 215, 235, 0.18)"
+                        : "none",
+                    }}
+                  >
+                    {selectedIntel.title}
+                  </h3>
 
-        {!selectedIntel && (
-          <div
-            style={{
-              marginTop: "72px",
-              display: "flex",
-              flexDirection: "column",
-              alignItems: "center",
-              opacity: 0.9,
-              textAlign: "center",
-            }}
-          >
-            <img
-              src="logo.png"
-              alt="agency logo"
-              style={{
-                width: "min(160px, 42vw)",
-                marginBottom: "20px",
-                filter: isPoemTheme
-                  ? "brightness(1.34) drop-shadow(0 0 16px rgba(255,210,235,0.28))"
-                  : "brightness(1.2)",
-                transition: "filter 0.35s ease",
-              }}
-            />
+                  <p
+                    style={{
+                      margin: 0,
+                      color: isPoemTheme ? "#ffe6f3" : "#bcd4ff",
+                      fontSize: "14px",
+                      lineHeight: "1.6",
+                      wordBreak: "break-word",
+                    }}
+                  >
+                    {selectedIntel.subtitle}
+                  </p>
+                </div>
 
-            <div
-              style={{
-                fontSize: "14px",
-                letterSpacing: "3px",
-                color: isPoemTheme ? "#ffe6f3" : "#bcd4ff",
-                wordBreak: "break-word",
-                textShadow: isPoemTheme
-                  ? "0 0 12px rgba(255, 210, 235, 0.18)"
-                  : "none",
-                transition: "color 0.35s ease, text-shadow 0.35s ease",
-              }}
-            >
-              뉴 샌디에이고 데이터 체계
-            </div>
-          </div>
+                <div
+                  style={{
+                    display: "flex",
+                    justifyContent: "center",
+                    marginBottom: "18px",
+                    position: "relative",
+                    zIndex: 1,
+                  }}
+                >
+                  <img
+                    src={selectedIntel.image}
+                    alt={selectedIntel.title}
+                    onError={(e) => {
+                      e.currentTarget.src = selectedIntel.image + "?retry=" + Date.now();
+                    }}
+                    style={{
+                      width: "100%",
+                      maxWidth: "320px",
+                      borderRadius: "12px",
+                      border: isPoemTheme
+                        ? "1px solid rgba(255, 220, 240, 0.26)"
+                        : "1px solid rgba(160, 200, 255, 0.18)",
+                      objectFit: "cover",
+                      display: "block",
+                      boxShadow: isPoemTheme
+                        ? "0 0 24px rgba(255, 170, 215, 0.18), 0 0 48px rgba(255, 200, 228, 0.08)"
+                        : "none",
+                      filter: isPoemTheme ? "brightness(1.06) saturate(1.12)" : "none",
+                    }}
+                  />
+                </div>
+
+                <div
+                  style={{
+                    border: isPoemTheme
+                      ? "1px solid rgba(255, 220, 240, 0.18)"
+                      : "1px solid rgba(160, 200, 255, 0.15)",
+                    borderRadius: "12px",
+                    background: isPoemTheme
+                      ? "rgba(50, 18, 40, 0.95)"
+                      : "rgba(4, 11, 20, 0.95)",
+                    padding: "14px",
+                    maxHeight: "50vh",
+                    overflowY: "auto",
+                    overflowX: "hidden",
+                    boxSizing: "border-box",
+                    position: "relative",
+                    zIndex: 1,
+                  }}
+                >
+                  <div
+                    style={{
+                      color: isPoemTheme ? "#ffd4ea" : "#8fb7ff",
+                      fontSize: "12px",
+                      marginBottom: "10px",
+                      letterSpacing: "1.5px",
+                    }}
+                  >
+                    DOCUMENT CONTENT
+                  </div>
+
+                  <pre
+                    style={{
+                      margin: 0,
+                      whiteSpace: "pre-wrap",
+                      wordBreak: "break-word",
+                      overflowWrap: "break-word",
+                      textAlign: "left",
+                      maxWidth: "100%",
+                      fontSize: "14px",
+                      lineHeight: "1.78",
+                      color: isPoemTheme ? "#fff6fb" : "#eaf2ff",
+                      textShadow: isPoemTheme
+                        ? "0 0 10px rgba(255, 220, 238, 0.08)"
+                        : "0 0 8px rgba(180, 220, 255, 0.04)",
+                    }}
+                  >
+                    {displayedText}
+                    <span
+                      style={{
+                        display: "inline-block",
+                        width: "8px",
+                        marginLeft: "2px",
+                        animation: "blink 1s step-end infinite",
+                      }}
+                    >
+                      █
+                    </span>
+                  </pre>
+                </div>
+              </div>
+            )}
+          </>
         )}
       </div>
 
@@ -1394,8 +1464,7 @@ useEffect(() => {
               radial-gradient(circle at 45% 70%, rgba(255,255,255,0.16) 0 1px, transparent 1px),
               radial-gradient(circle at 65% 85%, rgba(255,255,255,0.1) 0 1px, transparent 1px)
             `,
-          backgroundSize:
-            "120px 120px, 160px 160px, 140px 140px, 180px 180px",
+          backgroundSize: "120px 120px, 160px 160px, 140px 140px, 180px 180px",
           animation: "noiseMove 0.22s steps(2) infinite",
           transition: "opacity 0.35s ease, background-image 0.35s ease",
         }}
@@ -1437,20 +1506,27 @@ useEffect(() => {
           }
 
           @keyframes petalFloat {
+            0% { transform: translateY(0px) translateX(0px); }
+            25% { transform: translateY(10px) translateX(-6px); }
+            50% { transform: translateY(22px) translateX(8px); }
+            75% { transform: translateY(34px) translateX(-5px); }
+            100% { transform: translateY(46px) translateX(6px); }
+          }
+
+          @keyframes bootFlow {
             0% {
-              transform: translateY(0px) translateX(0px);
+              transform: translateX(110px);
+              opacity: 0;
             }
-            25% {
-              transform: translateY(10px) translateX(-6px);
+            10% {
+              opacity: 1;
             }
-            50% {
-              transform: translateY(22px) translateX(8px);
-            }
-            75% {
-              transform: translateY(34px) translateX(-5px);
+            85% {
+              opacity: 0.9;
             }
             100% {
-              transform: translateY(46px) translateX(6px);
+              transform: translateX(-360px);
+              opacity: 0;
             }
           }
 
