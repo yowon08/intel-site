@@ -757,6 +757,22 @@ export default function App() {
               </button>
             </div>
 
+            <div
+  style={{
+    marginBottom: "12px",
+    color: "#bcd4ff",
+    fontSize: "12px",
+    letterSpacing: "0.8px",
+    lineHeight: "1.6",
+  }}
+>
+  열람한 기록:{" "}
+  <span style={{ color: "#ffffff" }}>{history.length}</span>
+  {" / "}
+  현재 존재하는 기록:{" "}
+  <span style={{ color: "#9ec2ff" }}>{normalizedDatabase.length}</span>
+</div>
+
             {history.length === 0 ? (
               <div
                 style={{
