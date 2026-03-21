@@ -459,54 +459,107 @@ export default function App() {
     return () => window.clearInterval(interval);
   }, []);
 
-  useEffect(() => {
-    if (typingTimeoutRef.current) {
-      window.clearTimeout(typingTimeoutRef.current);
-      typingTimeoutRef.current = null;
-    }
+  // 🔥 핵심 부분만 보여주는 게 아니라 실제로 필요한 "완성 로직" 포함
 
-    if (!selectedIntel) {
-      setDisplayedText("");
+useEffect(() => {
+  if (typingTimeoutRef.current) {
+    window.clearTimeout(typingTimeoutRef.current);
+    typingTimeoutRef.current = null;
+  }
+
+  if (!selectedIntel) {
+    setDisplayedText("");
+    return;
+  }
+
+  let cancelled = false;
+  let charIndex = 0;
+  const fullText = selectedIntel.text ?? "";
+  const isPoem =
+    selectedIntel.code.trim().toUpperCase() === POEM_CODE;
+
+  setDisplayedText("");
+
+  // ⭐⭐ p0em 전용 타이밍 설정 ⭐⭐
+  const poemTargetDuration = 26000; // 전체 26초
+  const poemStartDelay = 1800; // 시작 전 숨 고르기
+  const poemEndingDelay = 1200; // 끝 여운
+
+  const poemPlayable =
+    poemTargetDuration - poemStartDelay - poemEndingDelay;
+
+  const startTime = Date.now();
+
+  const typeNext = () => {
+    if (cancelled) return;
+
+    if (charIndex >= fullText.length) {
+      typingTimeoutRef.current = null;
       return;
     }
 
-    let cancelled = false;
-    let charIndex = 0;
-    const fullText = selectedIntel.text ?? "";
-    const isPoem = selectedIntel.code.trim().toUpperCase() === POEM_CODE;
+    const nextIndex = charIndex + 1;
+    const nextText = fullText.slice(0, nextIndex);
+    const currentChar = fullText[charIndex] ?? "";
 
-    setDisplayedText("");
+    setDisplayedText(nextText);
+    charIndex = nextIndex;
 
-    const typeNext = () => {
-      if (cancelled) return;
+    // 🔊 타자음
+    if (
+      currentChar.trim() !== "" &&
+      currentChar !== "\n" &&
+      Math.random() > 0.45
+    ) {
+      playTypingSound();
+    }
 
-      if (charIndex >= fullText.length) {
-        typingTimeoutRef.current = null;
-        return;
+    if (charIndex >= fullText.length) {
+      typingTimeoutRef.current = null;
+      return;
+    }
+
+    let nextDelay;
+
+    if (isPoem) {
+      // ⭐⭐ 남은 시간 기반 계산 ⭐⭐
+      const elapsed = Date.now() - startTime;
+      const remainingChars = Math.max(
+        1,
+        fullText.length - charIndex
+      );
+
+      const remainingTime = Math.max(
+        100,
+        poemPlayable - elapsed
+      );
+
+      let base = remainingTime / remainingChars;
+
+      // ⭐⭐ 감성 보정 ⭐⭐
+      if (currentChar === "\n") {
+        base *= 3.5;
+      } else if (
+        currentChar === "." ||
+        currentChar === "," ||
+        currentChar === "!" ||
+        currentChar === "?" ||
+        currentChar === "…"
+      ) {
+        base *= 2.2;
+      } else if (currentChar === " ") {
+        base *= 0.7;
       }
 
-      const nextIndex = charIndex + 1;
-      const nextText = fullText.slice(0, nextIndex);
-      const currentChar = fullText[charIndex] ?? "";
-
-      setDisplayedText(nextText);
-      charIndex = nextIndex;
-
-      const shouldPlayTyping =
-        currentChar.trim() !== "" &&
-        currentChar !== "\n" &&
-        (Math.random() > 0.4 || charIndex % 3 === 0);
-
-      if (shouldPlayTyping) {
-        playTypingSound();
+      // ⭐ 랜덤 긴 숨
+      if (Math.random() < 0.14) {
+        base += 200 + Math.random() * 300;
       }
 
-      if (charIndex >= fullText.length) {
-        typingTimeoutRef.current = null;
-        return;
-      }
-
-      const baseDelay =
+      nextDelay = base;
+    } else {
+      // 기존 일반 속도
+      nextDelay =
         currentChar === "\n"
           ? 55 + Math.random() * 35
           : currentChar === "." ||
@@ -515,22 +568,28 @@ export default function App() {
             currentChar === "?"
           ? 45 + Math.random() * 40
           : 14 + Math.random() * 18;
+    }
 
-      const nextDelay = isPoem ? baseDelay * 1.4 : baseDelay;
+    typingTimeoutRef.current = window.setTimeout(
+      typeNext,
+      nextDelay
+    );
+  };
 
-      typingTimeoutRef.current = window.setTimeout(typeNext, nextDelay);
-    };
+  // ⭐ 시작 딜레이 (p0em 전용)
+  typingTimeoutRef.current = window.setTimeout(
+    typeNext,
+    isPoem ? poemStartDelay : 120
+  );
 
-    typingTimeoutRef.current = window.setTimeout(typeNext, isPoem ? 180 : 120);
-
-    return () => {
-      cancelled = true;
-      if (typingTimeoutRef.current) {
-        window.clearTimeout(typingTimeoutRef.current);
-        typingTimeoutRef.current = null;
-      }
-    };
-  }, [selectedIntel]);
+  return () => {
+    cancelled = true;
+    if (typingTimeoutRef.current) {
+      window.clearTimeout(typingTimeoutRef.current);
+      typingTimeoutRef.current = null;
+    }
+  };
+}, [selectedIntel]);
 
   const handleSubmit = () => {
     startBgmForMode(themeMode);
