@@ -11,6 +11,15 @@ type IntelEntry = {
 
 type BootStage = "booting" | "ready";
 
+type HistoryItem = {
+  code: string;
+  title: string;
+  openedAt: number;
+};
+
+const HISTORY_STORAGE_KEY = "intel_terminal_history_v1";
+const MAX_HISTORY = 12;
+
 const bootLines = [
   "보안성 검토 중...",
   "방첩 프로토콜 가동...",
@@ -29,6 +38,7 @@ export default function App() {
   const [isDenied, setIsDenied] = useState(false);
   const [glitch, setGlitch] = useState(false);
   const [screenFlicker, setScreenFlicker] = useState(false);
+  const [history, setHistory] = useState<HistoryItem[]>([]);
 
   const bgmRef = useRef<HTMLAudioElement | null>(null);
   const bootSoundRef = useRef<HTMLAudioElement | null>(null);
@@ -104,6 +114,75 @@ export default function App() {
     }
   };
 
+  const loadHistory = () => {
+    try {
+      const raw = localStorage.getItem(HISTORY_STORAGE_KEY);
+      if (!raw) return [];
+      const parsed = JSON.parse(raw);
+      if (!Array.isArray(parsed)) return [];
+      return parsed.filter(
+        (item) =>
+          item &&
+          typeof item.code === "string" &&
+          typeof item.title === "string" &&
+          typeof item.openedAt === "number"
+      ) as HistoryItem[];
+    } catch {
+      return [];
+    }
+  };
+
+  const saveHistory = (nextHistory: HistoryItem[]) => {
+    try {
+      localStorage.setItem(HISTORY_STORAGE_KEY, JSON.stringify(nextHistory));
+    } catch {
+      // ignore
+    }
+  };
+
+  const addHistory = (entry: IntelEntry) => {
+    setHistory((prev) => {
+      const next: HistoryItem[] = [
+        {
+          code: entry.code.trim().toUpperCase(),
+          title: entry.title,
+          openedAt: Date.now(),
+        },
+        ...prev.filter(
+          (item) => item.code !== entry.code.trim().toUpperCase()
+        ),
+      ].slice(0, MAX_HISTORY);
+
+      saveHistory(next);
+      return next;
+    });
+  };
+
+  const clearHistory = () => {
+    playClick();
+    setHistory([]);
+    try {
+      localStorage.removeItem(HISTORY_STORAGE_KEY);
+    } catch {
+      // ignore
+    }
+    setStatusText("열람 기록이 삭제되었습니다.");
+  };
+
+  const formatOpenedTime = (timestamp: number) => {
+    try {
+      return new Date(timestamp).toLocaleString("ko-KR", {
+        year: "2-digit",
+        month: "2-digit",
+        day: "2-digit",
+        hour: "2-digit",
+        minute: "2-digit",
+      });
+    } catch {
+      return "";
+    }
+  };
+
   const stopDeniedAlarm = () => {
     setIsDenied(false);
     if (deniedLoopRef.current) {
@@ -130,6 +209,34 @@ export default function App() {
       stopDeniedAlarm();
     }, 3000);
   };
+
+  const openDocument = (entry: IntelEntry) => {
+    if (typingTimeoutRef.current) {
+      window.clearTimeout(typingTimeoutRef.current);
+      typingTimeoutRef.current = null;
+    }
+
+    if (openDocumentTimeoutRef.current) {
+      window.clearTimeout(openDocumentTimeoutRef.current);
+      openDocumentTimeoutRef.current = null;
+    }
+
+    stopDeniedAlarm();
+    setDisplayedText("");
+    setStatusText("접근 승인됨...");
+    safePlay(openSoundRef.current, true);
+
+    openDocumentTimeoutRef.current = window.setTimeout(() => {
+      setSelectedIntel(entry);
+      setInputCode(entry.code.trim().toUpperCase());
+      setStatusText(entry.title + " 문서 열람 중");
+      addHistory(entry);
+    }, 500);
+  };
+
+  useEffect(() => {
+    setHistory(loadHistory());
+  }, []);
 
   useEffect(() => {
     bgmRef.current = new Audio("/sounds/bgm.mp3");
@@ -344,28 +451,19 @@ export default function App() {
       (item) => item.normalizedCode === code
     );
 
-    if (typingTimeoutRef.current) {
-      window.clearTimeout(typingTimeoutRef.current);
-      typingTimeoutRef.current = null;
-    }
-
-    if (openDocumentTimeoutRef.current) {
-      window.clearTimeout(openDocumentTimeoutRef.current);
-      openDocumentTimeoutRef.current = null;
-    }
-
     if (found) {
-      stopDeniedAlarm();
-      setStatusText("접근 승인됨...");
-      setDisplayedText("");
-
-      safePlay(openSoundRef.current, true);
-
-      openDocumentTimeoutRef.current = window.setTimeout(() => {
-        setSelectedIntel(found);
-        setStatusText(found.title + " 문서 열람 중");
-      }, 500);
+      openDocument(found);
     } else {
+      if (typingTimeoutRef.current) {
+        window.clearTimeout(typingTimeoutRef.current);
+        typingTimeoutRef.current = null;
+      }
+
+      if (openDocumentTimeoutRef.current) {
+        window.clearTimeout(openDocumentTimeoutRef.current);
+        openDocumentTimeoutRef.current = null;
+      }
+
       setSelectedIntel(null);
       setDisplayedText("");
       setStatusText("ACCESS DENIED");
@@ -396,6 +494,22 @@ export default function App() {
     safePlay(closeSoundRef.current, true);
   };
 
+  const handleOpenFromHistory = (code: string) => {
+    startBgm();
+    playClick();
+
+    const found = normalizedDatabase.find(
+      (item) => item.normalizedCode === code
+    );
+
+    if (!found) {
+      setStatusText("기록된 문서를 현재 데이터베이스에서 찾을 수 없습니다.");
+      return;
+    }
+
+    openDocument(found);
+  };
+
   return (
     <div
       style={{
@@ -417,7 +531,7 @@ export default function App() {
           position: "relative",
           zIndex: 2,
           width: "100%",
-          maxWidth: "860px",
+          maxWidth: "980px",
           display: "flex",
           flexDirection: "column",
           alignItems: "center",
@@ -592,6 +706,132 @@ export default function App() {
         >
           {statusText}
         </div>
+
+        {bootStage === "ready" && !selectedIntel && (
+          <div
+            style={{
+              width: "100%",
+              marginTop: "24px",
+              background: "rgba(9, 19, 33, 0.84)",
+              border: "1px solid rgba(160, 200, 255, 0.16)",
+              borderRadius: "14px",
+              padding: "16px",
+              boxSizing: "border-box",
+              boxShadow: "0 0 24px rgba(0, 0, 0, 0.22)",
+            }}
+          >
+            <div
+              style={{
+                display: "flex",
+                justifyContent: "space-between",
+                alignItems: "center",
+                gap: "10px",
+                marginBottom: "12px",
+                flexWrap: "wrap",
+              }}
+            >
+              <div
+                style={{
+                  color: "#9ec2ff",
+                  fontSize: "13px",
+                  letterSpacing: "1.3px",
+                }}
+              >
+                RECENT ACCESS LOG
+              </div>
+
+              <button
+                onClick={clearHistory}
+                style={{
+                  padding: "8px 12px",
+                  borderRadius: "8px",
+                  border: "1px solid rgba(255,255,255,0.12)",
+                  background: "rgba(70,20,20,0.7)",
+                  color: "#ffd0d0",
+                  cursor: "pointer",
+                  fontFamily: "monospace",
+                  fontSize: "12px",
+                }}
+              >
+                기록 삭제
+              </button>
+            </div>
+
+            {history.length === 0 ? (
+              <div
+                style={{
+                  color: "#8ea8cf",
+                  fontSize: "13px",
+                  lineHeight: "1.7",
+                }}
+              >
+                아직 이 기기에서 열람한 문서 기록이 없습니다.
+              </div>
+            ) : (
+              <div
+                style={{
+                  display: "grid",
+                  gap: "10px",
+                }}
+              >
+                {history.map((item) => (
+                  <button
+                    key={item.code}
+                    onClick={() => handleOpenFromHistory(item.code)}
+                    style={{
+                      width: "100%",
+                      textAlign: "left",
+                      background: "rgba(6, 14, 26, 0.92)",
+                      border: "1px solid rgba(160, 200, 255, 0.14)",
+                      borderRadius: "10px",
+                      padding: "12px",
+                      color: "#eaf2ff",
+                      cursor: "pointer",
+                      fontFamily: "monospace",
+                    }}
+                  >
+                    <div
+                      style={{
+                        display: "flex",
+                        justifyContent: "space-between",
+                        gap: "10px",
+                        flexWrap: "wrap",
+                      }}
+                    >
+                      <div
+                        style={{
+                          fontSize: "14px",
+                          color: "#ffffff",
+                        }}
+                      >
+                        {item.title}
+                      </div>
+                      <div
+                        style={{
+                          fontSize: "12px",
+                          color: "#8ea8cf",
+                        }}
+                      >
+                        {formatOpenedTime(item.openedAt)}
+                      </div>
+                    </div>
+
+                    <div
+                      style={{
+                        marginTop: "6px",
+                        fontSize: "12px",
+                        color: "#9ec2ff",
+                        letterSpacing: "1px",
+                      }}
+                    >
+                      CODE: {item.code}
+                    </div>
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
 
         {selectedIntel && (
           <div
