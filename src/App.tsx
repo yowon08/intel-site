@@ -33,10 +33,12 @@ export default function App() {
   const bgmRef = useRef<HTMLAudioElement | null>(null);
   const bootSoundRef = useRef<HTMLAudioElement | null>(null);
   const openSoundRef = useRef<HTMLAudioElement | null>(null);
-  const typingSoundRef = useRef<HTMLAudioElement | null>(null);
   const deniedSoundRef = useRef<HTMLAudioElement | null>(null);
   const closeSoundRef = useRef<HTMLAudioElement | null>(null);
   const clickSoundRef = useRef<HTMLAudioElement | null>(null);
+
+  const typingPoolRef = useRef<HTMLAudioElement[]>([]);
+  const typingIndexRef = useRef(0);
 
   const hasUnlockedAudioRef = useRef(false);
   const deniedLoopRef = useRef<number | null>(null);
@@ -54,7 +56,23 @@ export default function App() {
     if (!audio) return;
     try {
       if (reset) audio.currentTime = 0;
-      audio.play().catch(() => {});
+      const playPromise = audio.play();
+      if (playPromise && typeof playPromise.catch === "function") {
+        playPromise.catch(() => {});
+      }
+    } catch {
+      // ignore
+    }
+  };
+
+  const startBgm = () => {
+    if (!bgmRef.current) return;
+    try {
+      bgmRef.current.loop = true;
+      if (bgmRef.current.paused) {
+        bgmRef.current.currentTime = 0;
+        bgmRef.current.play().catch(() => {});
+      }
     } catch {
       // ignore
     }
@@ -67,6 +85,30 @@ export default function App() {
       clickSoundRef.current.play().catch(() => {});
     } catch {
       // ignore
+    }
+  };
+
+  const playTypingSound = () => {
+    const pool = typingPoolRef.current;
+    if (!pool.length) return;
+
+    const audio = pool[typingIndexRef.current];
+    typingIndexRef.current = (typingIndexRef.current + 1) % pool.length;
+
+    try {
+      audio.pause();
+      audio.currentTime = Math.random() * 0.03;
+      audio.play().catch(() => {});
+    } catch {
+      // ignore
+    }
+  };
+
+  const stopDeniedAlarm = () => {
+    setIsDenied(false);
+    if (deniedLoopRef.current) {
+      window.clearInterval(deniedLoopRef.current);
+      deniedLoopRef.current = null;
     }
   };
 
@@ -85,11 +127,7 @@ export default function App() {
     }, 850);
 
     window.setTimeout(() => {
-      setIsDenied(false);
-      if (deniedLoopRef.current) {
-        window.clearInterval(deniedLoopRef.current);
-        deniedLoopRef.current = null;
-      }
+      stopDeniedAlarm();
     }, 3000);
   };
 
@@ -97,68 +135,80 @@ export default function App() {
     bgmRef.current = new Audio("/sounds/bgm.mp3");
     bgmRef.current.loop = true;
     bgmRef.current.volume = 0.22;
+    bgmRef.current.preload = "auto";
 
     bootSoundRef.current = new Audio("/sounds/boot.mp3");
     bootSoundRef.current.volume = 0.55;
+    bootSoundRef.current.preload = "auto";
 
     openSoundRef.current = new Audio("/sounds/open.mp3");
     openSoundRef.current.volume = 0.7;
-
-    typingSoundRef.current = new Audio("/sounds/typing.mp3");
-    typingSoundRef.current.volume = 0.18;
+    openSoundRef.current.preload = "auto";
 
     deniedSoundRef.current = new Audio("/sounds/denied.mp3");
     deniedSoundRef.current.volume = 0.62;
+    deniedSoundRef.current.preload = "auto";
 
     closeSoundRef.current = new Audio("/sounds/close.mp3");
     closeSoundRef.current.volume = 0.5;
+    closeSoundRef.current.preload = "auto";
 
     clickSoundRef.current = new Audio("/sounds/click.mp3");
     clickSoundRef.current.volume = 0.38;
+    clickSoundRef.current.preload = "auto";
 
-    const tryUnlockAudio = () => {
+    typingPoolRef.current = Array.from({ length: 6 }, () => {
+      const a = new Audio("/sounds/typing.mp3");
+      a.volume = 0.14;
+      a.preload = "auto";
+      return a;
+    });
+
+    const unlockAudio = () => {
       if (hasUnlockedAudioRef.current) return;
       hasUnlockedAudioRef.current = true;
 
-      safePlay(bgmRef.current, true);
+      startBgm();
       safePlay(bootSoundRef.current, true);
     };
 
-    tryUnlockAudio();
-
-    window.addEventListener("pointerdown", tryUnlockAudio, { once: true });
-    window.addEventListener("keydown", tryUnlockAudio, { once: true });
+    window.addEventListener("pointerdown", unlockAudio, { once: true });
+    window.addEventListener("keydown", unlockAudio, { once: true });
 
     return () => {
-      window.removeEventListener("pointerdown", tryUnlockAudio);
-      window.removeEventListener("keydown", tryUnlockAudio);
+      window.removeEventListener("pointerdown", unlockAudio);
+      window.removeEventListener("keydown", unlockAudio);
 
       if (typingTimeoutRef.current) {
         window.clearTimeout(typingTimeoutRef.current);
+        typingTimeoutRef.current = null;
       }
 
       if (openDocumentTimeoutRef.current) {
         window.clearTimeout(openDocumentTimeoutRef.current);
+        openDocumentTimeoutRef.current = null;
       }
 
       if (deniedLoopRef.current) {
         window.clearInterval(deniedLoopRef.current);
+        deniedLoopRef.current = null;
       }
 
-      const audios = [
+      [
         bgmRef.current,
         bootSoundRef.current,
         openSoundRef.current,
-        typingSoundRef.current,
         deniedSoundRef.current,
         closeSoundRef.current,
         clickSoundRef.current,
-      ];
-
-      audios.forEach((audio) => {
-        if (audio) {
+        ...typingPoolRef.current,
+      ].forEach((audio) => {
+        if (!audio) return;
+        try {
           audio.pause();
           audio.src = "";
+        } catch {
+          // ignore
         }
       });
     };
@@ -210,49 +260,62 @@ export default function App() {
   }, []);
 
   useEffect(() => {
+    if (typingTimeoutRef.current) {
+      window.clearTimeout(typingTimeoutRef.current);
+      typingTimeoutRef.current = null;
+    }
+
     if (!selectedIntel) {
       setDisplayedText("");
-      if (typingTimeoutRef.current) {
-        window.clearTimeout(typingTimeoutRef.current);
-        typingTimeoutRef.current = null;
-      }
       return;
     }
 
     let cancelled = false;
     let charIndex = 0;
+    const fullText = selectedIntel.text ?? "";
 
     setDisplayedText("");
 
     const typeNext = () => {
       if (cancelled) return;
 
-      charIndex += 1;
-      setDisplayedText(selectedIntel.text.slice(0, charIndex));
-
-      const currentChar = selectedIntel.text[charIndex - 1] ?? "";
-      const shouldPlayTypingSound =
-        currentChar.trim() !== "" && (Math.random() > 0.35 || charIndex % 3 === 0);
-
-      if (shouldPlayTypingSound && typingSoundRef.current) {
-        try {
-          typingSoundRef.current.currentTime = Math.random() * 0.08;
-          typingSoundRef.current.play().catch(() => {});
-        } catch {
-          // ignore
-        }
+      if (charIndex >= fullText.length) {
+        typingTimeoutRef.current = null;
+        return;
       }
 
-      if (charIndex < selectedIntel.text.length) {
-        const nextDelay =
-          currentChar === "\n"
-            ? 45 + Math.random() * 40
-            : currentChar === "." || currentChar === "," || currentChar === "?"
-            ? 30 + Math.random() * 45
-            : 8 + Math.random() * 16;
+      const nextIndex = charIndex + 1;
+      const nextText = fullText.slice(0, nextIndex);
+      const currentChar = fullText[charIndex] ?? "";
 
-        typingTimeoutRef.current = window.setTimeout(typeNext, nextDelay);
+      setDisplayedText(nextText);
+      charIndex = nextIndex;
+
+      const shouldPlayTyping =
+        currentChar.trim() !== "" &&
+        currentChar !== "\n" &&
+        (Math.random() > 0.4 || charIndex % 3 === 0);
+
+      if (shouldPlayTyping) {
+        playTypingSound();
       }
+
+      if (charIndex >= fullText.length) {
+        typingTimeoutRef.current = null;
+        return;
+      }
+
+      const nextDelay =
+        currentChar === "\n"
+          ? 55 + Math.random() * 35
+          : currentChar === "." ||
+            currentChar === "," ||
+            currentChar === "!" ||
+            currentChar === "?"
+          ? 45 + Math.random() * 40
+          : 14 + Math.random() * 18;
+
+      typingTimeoutRef.current = window.setTimeout(typeNext, nextDelay);
     };
 
     typingTimeoutRef.current = window.setTimeout(typeNext, 120);
@@ -267,6 +330,7 @@ export default function App() {
   }, [selectedIntel]);
 
   const handleSubmit = () => {
+    startBgm();
     playClick();
 
     const code = inputCode.trim().toUpperCase();
@@ -280,13 +344,18 @@ export default function App() {
       (item) => item.normalizedCode === code
     );
 
+    if (typingTimeoutRef.current) {
+      window.clearTimeout(typingTimeoutRef.current);
+      typingTimeoutRef.current = null;
+    }
+
     if (openDocumentTimeoutRef.current) {
       window.clearTimeout(openDocumentTimeoutRef.current);
       openDocumentTimeoutRef.current = null;
     }
 
     if (found) {
-      setIsDenied(false);
+      stopDeniedAlarm();
       setStatusText("접근 승인됨...");
       setDisplayedText("");
 
@@ -305,18 +374,24 @@ export default function App() {
   };
 
   const handleReset = () => {
+    startBgm();
     playClick();
 
+    if (typingTimeoutRef.current) {
+      window.clearTimeout(typingTimeoutRef.current);
+      typingTimeoutRef.current = null;
+    }
+
+    if (openDocumentTimeoutRef.current) {
+      window.clearTimeout(openDocumentTimeoutRef.current);
+      openDocumentTimeoutRef.current = null;
+    }
+
+    stopDeniedAlarm();
     setSelectedIntel(null);
     setDisplayedText("");
     setInputCode("");
     setStatusText("대기 중. 접근 코드를 입력하세요.");
-    setIsDenied(false);
-
-    if (deniedLoopRef.current) {
-      window.clearInterval(deniedLoopRef.current);
-      deniedLoopRef.current = null;
-    }
 
     safePlay(closeSoundRef.current, true);
   };
@@ -351,7 +426,8 @@ export default function App() {
             ? "contrast(1.22) brightness(1.08) saturate(0.95)"
             : "none",
           opacity: screenFlicker ? 0.93 : 1,
-          transition: "transform 0.05s linear, opacity 0.05s linear, filter 0.05s linear",
+          transition:
+            "transform 0.05s linear, opacity 0.05s linear, filter 0.05s linear",
         }}
       >
         <h2
@@ -434,7 +510,10 @@ export default function App() {
             <input
               value={inputCode}
               onChange={(e) => setInputCode(e.target.value)}
-              onFocus={playClick}
+              onFocus={() => {
+                playClick();
+                startBgm();
+              }}
               onKeyDown={(e) => {
                 if (e.key === "Enter") handleSubmit();
               }}
@@ -497,7 +576,11 @@ export default function App() {
         <div
           style={{
             marginTop: "12px",
-            color: isDenied ? "#ff3a3a" : statusText === "ACCESS DENIED" ? "#ff8b8b" : "#bcd4ff",
+            color: isDenied
+              ? "#ff3a3a"
+              : statusText === "ACCESS DENIED"
+              ? "#ff8b8b"
+              : "#bcd4ff",
             fontSize: "14px",
             textAlign: "center",
             letterSpacing: "0.5px",
@@ -706,7 +789,8 @@ export default function App() {
             radial-gradient(circle at 45% 70%, rgba(255,255,255,0.16) 0 1px, transparent 1px),
             radial-gradient(circle at 65% 85%, rgba(255,255,255,0.1) 0 1px, transparent 1px)
           `,
-          backgroundSize: "120px 120px, 160px 160px, 140px 140px, 180px 180px",
+          backgroundSize:
+            "120px 120px, 160px 160px, 140px 140px, 180px 180px",
           animation: "noiseMove 0.22s steps(2) infinite",
         }}
       />
