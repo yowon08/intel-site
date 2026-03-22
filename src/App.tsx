@@ -65,6 +65,7 @@ const getSystemTheme = (systemMode: SystemMode, selectedIntel: IntelEntry | null
 };
 
 export default function App() {
+  
   const [bootStage, setBootStage] = useState<BootStage>("intro");
   const [introVisible, setIntroVisible] = useState(true);
   const [visibleBootLines, setVisibleBootLines] = useState<string[]>([]);
@@ -82,6 +83,14 @@ export default function App() {
   const [systemMode, setSystemMode] = useState<SystemMode>("intel");
   const [transitionTarget, setTransitionTarget] = useState<TransitionTarget>(null);
   const [transitionVisible, setTransitionVisible] = useState(false);
+  const [redzoneUnlocked, setRedzoneUnlocked] = useState(() => {
+  try {
+    return localStorage.getItem("redzone_unlocked_v1") === "true";
+  } catch {
+    return false;
+  }
+});
+
 
   const bgmRef = useRef<HTMLAudioElement | null>(null);
   const poemBgmRef = useRef<HTMLAudioElement | null>(null);
@@ -417,6 +426,14 @@ export default function App() {
       );
       systemSwitchTimeoutRef.current = null;
     }, 2200);
+    if (target === "redzone") {
+  setRedzoneUnlocked(true);
+  try {
+    localStorage.setItem("redzone_unlocked_v1", "true");
+  } catch {
+    // noop
+  }
+}
   };
 
   useEffect(() => {
@@ -1340,30 +1357,30 @@ export default function App() {
                 확인
               </button>
 
-              {!selectedIntel && (
-                <button
-                  onClick={() => {
-                    playClick();
-                    if (isRedzoneTheme) switchSystem("intel");
-                    else switchSystem("redzone");
-                  }}
-                  style={{
-                    padding: "12px 18px",
-                    borderRadius: "10px",
-                    border: isRedzoneTheme
-                      ? "1px solid rgba(255, 220, 220, 0.16)"
-                      : "1px solid rgba(255, 255, 255, 0.15)",
-                    background: isRedzoneTheme ? "#241012" : "#142233",
-                    color: isRedzoneTheme ? "#ffe4e4" : "#dfeeff",
-                    cursor: "pointer",
-                    fontFamily: "monospace",
-                    fontSize: "14px",
-                    boxShadow: "0 0 12px rgba(0,0,0,0.18)",
-                  }}
-                >
-                  {switchButtonLabel}
-                </button>
-              )}
+              {!selectedIntel && (isRedzoneTheme || redzoneUnlocked) && (
+  <button
+    onClick={() => {
+      playClick();
+      if (isRedzoneTheme) switchSystem("intel");
+      else switchSystem("redzone");
+    }}
+    style={{
+      padding: "12px 18px",
+      borderRadius: "10px",
+      border: isRedzoneTheme
+        ? "1px solid rgba(255, 220, 220, 0.16)"
+        : "1px solid rgba(255, 255, 255, 0.15)",
+      background: isRedzoneTheme ? "#241012" : "#142233",
+      color: isRedzoneTheme ? "#ffe4e4" : "#dfeeff",
+      cursor: "pointer",
+      fontFamily: "monospace",
+      fontSize: "14px",
+      boxShadow: "0 0 12px rgba(0,0,0,0.18)",
+    }}
+  >
+    {switchButtonLabel}
+  </button>
+)}
 
               {selectedIntel && (
                 <button
