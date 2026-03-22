@@ -142,9 +142,15 @@ export default function App() {
     }
   };
 
-  const stopAllBgm = () => {
+  const getBgmByMode = (mode: ThemeMode) => {
+    if (mode === "poem") return poemBgmRef.current;
+    if (mode === "redzone") return redzoneBgmRef.current;
+    return bgmRef.current;
+  };
+
+  const stopAllBgm = (except?: HTMLAudioElement | null) => {
     [bgmRef.current, poemBgmRef.current, redzoneBgmRef.current].forEach((audio) => {
-      if (!audio) return;
+      if (!audio || audio === except) return;
       try {
         audio.pause();
         audio.currentTime = 0;
@@ -154,43 +160,29 @@ export default function App() {
     });
   };
 
-  const startNormalBgm = () => {
-    if (!bgmRef.current) return;
+  const startBgmForMode = (mode: ThemeMode, forceRestart = false) => {
+    const target = getBgmByMode(mode);
+    if (!target) return;
+
     try {
-      stopAllBgm();
-      bgmRef.current.loop = true;
-      bgmRef.current.play().catch(() => {});
+      target.loop = true;
+
+      const isAlreadyPlaying = !target.paused && !target.ended && target.currentTime > 0;
+
+      stopAllBgm(target);
+
+      if (isAlreadyPlaying && !forceRestart) {
+        return;
+      }
+
+      if (forceRestart) {
+        target.currentTime = 0;
+      }
+
+      target.play().catch(() => {});
     } catch {
       // noop
     }
-  };
-
-  const startPoemBgm = () => {
-    if (!poemBgmRef.current) return;
-    try {
-      stopAllBgm();
-      poemBgmRef.current.loop = true;
-      poemBgmRef.current.play().catch(() => {});
-    } catch {
-      // noop
-    }
-  };
-
-  const startRedzoneBgm = () => {
-    if (!redzoneBgmRef.current) return;
-    try {
-      stopAllBgm();
-      redzoneBgmRef.current.loop = true;
-      redzoneBgmRef.current.play().catch(() => {});
-    } catch {
-      // noop
-    }
-  };
-
-  const startBgmForMode = (mode: ThemeMode) => {
-    if (mode === "poem") startPoemBgm();
-    else if (mode === "redzone") startRedzoneBgm();
-    else startNormalBgm();
   };
 
   const playClick = () => {
@@ -377,12 +369,9 @@ export default function App() {
 
     if (nextTheme === "poem") {
       triggerPoemPulse();
-      startPoemBgm();
-    } else if (nextTheme === "redzone") {
-      startRedzoneBgm();
-    } else {
-      startNormalBgm();
     }
+
+    startBgmForMode(nextTheme);
 
     openDocumentTimeoutRef.current = window.setTimeout(() => {
       setSelectedIntel(entry);
@@ -405,10 +394,10 @@ export default function App() {
 
     if (target === "redzone") {
       setThemeMode("redzone");
-      startRedzoneBgm();
+      startBgmForMode("redzone");
     } else {
       setThemeMode("normal");
-      startNormalBgm();
+      startBgmForMode("normal");
     }
 
     if (systemSwitchTimeoutRef.current) {
@@ -554,7 +543,7 @@ export default function App() {
       if (!mounted) return;
       setBootStage("ready");
       setStatusText("접근 승인됨. 코드 입력 대기 중.");
-      startNormalBgm();
+      startBgmForMode("normal");
     }, 4050);
 
     return () => {
@@ -728,7 +717,6 @@ export default function App() {
   }, [selectedIntel]);
 
   const handleSubmit = () => {
-    startBgmForMode(themeMode);
     playClick();
 
     const code = inputCode.trim().toUpperCase();
@@ -777,7 +765,6 @@ export default function App() {
   };
 
   const handleOpenFromHistory = (code: string) => {
-    startBgmForMode(themeMode);
     playClick();
 
     const found = activeDatabase.find((item) => item.normalizedCode === code);
