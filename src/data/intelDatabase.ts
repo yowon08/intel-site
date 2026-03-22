@@ -4,6 +4,7 @@ export type IntelEntry = {
   subtitle: string;
   image: string;
   text: string;
+  classification?: "마물"
 };
 
 export const intelDatabase: IntelEntry[] = [
@@ -156,5 +157,25 @@ export const intelDatabase: IntelEntry[] = [
 사라지고 죽어가는 깃들을
 오늘도 사랑할 각오를`,
  },
+ {
+  code: "d3athw0rm",
+  classification: "마물",
+  title: "데스웜",
+  subtitle: "분류: 4급 마물",
+  image: "/intel/d3athw0rm.jpg",
+  text: ` 캘리포니아 전역을 돌아다니며 배회하는 마물. 
+  
+  배회 중 도시를 감지하면 그대로 돌진해오는 패턴을 보인다.
+  
+  2050년대 샌디에고에 출몰하여 성벽 아래를 파고들어와 도시를 헤집어놓았다가 초기 도시에 토벌되었다.
+
+  이후 데스웜이 발견될때마다 우선적으로 토벌이 진행되고 있다.
+
+  외피가 굉장히 단단하여 철판 4cm의 화력이 누적되지 않으면 큰 피해를 줄 수 없다.
+
+  그러나 상대적으로 내부 장기는 취약하여, 거대한 입에 폭약을 투입하는 식의 대응법이 주로 사용된다.
+
+  지능은 없는 듯하다.`
+}
  
 ];

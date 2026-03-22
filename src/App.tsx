@@ -7,10 +7,11 @@ type IntelEntry = {
   subtitle: string;
   image: string;
   text: string;
+  classification?: string;
 };
 
 type BootStage = "intro" | "collapse" | "reboot" | "ready";
-type ThemeMode = "normal" | "poem";
+type ThemeMode = "normal" | "poem" | "redzone";
 
 type HistoryItem = {
   code: string;
@@ -21,6 +22,7 @@ type HistoryItem = {
 const HISTORY_STORAGE_KEY = "intel_terminal_history_v1";
 const MAX_HISTORY = 12;
 const POEM_CODE = "P0EM";
+const RED_ZONE_CLASSIFICATION = "마물";
 
 const bootLines = [
   "보안성 검토 중...",
@@ -76,9 +78,22 @@ export default function App() {
       subtitle: item.subtitle,
       image: item.image,
       text: item.text,
+      classification: item.classification,
       normalizedCode: item.code.trim().toUpperCase(),
+      normalizedClassification: (item.classification ?? "").trim().toUpperCase(),
     }));
   }, []);
+
+  const isRedZoneEntry = (entry: Pick<IntelEntry, "classification">) =>
+    (entry.classification ?? "").trim().toUpperCase() === RED_ZONE_CLASSIFICATION;
+
+  const getThemeModeForEntry = (entry: Pick<IntelEntry, "code" | "classification">): ThemeMode => {
+    const normalizedCode = entry.code.trim().toUpperCase();
+
+    if (normalizedCode === POEM_CODE) return "poem";
+    if (isRedZoneEntry(entry)) return "redzone";
+    return "normal";
+  };
 
   const safePlay = (audio: HTMLAudioElement | null, reset = false) => {
     if (!audio) return;
@@ -290,17 +305,21 @@ export default function App() {
     setStatusText("접근 승인됨...");
     safePlay(openSoundRef.current, true);
 
-    const isPoem = entry.code.trim().toUpperCase() === POEM_CODE;
+    const nextThemeMode = getThemeModeForEntry(entry);
+    const isPoem = nextThemeMode === "poem";
+    const isRedZone = nextThemeMode === "redzone";
 
     if (isPoem) {
       setThemeMode("poem");
       triggerPoemPulse();
       startPoemBgm();
+      setStatusText("접근 승인됨...");
     } else {
-      setThemeMode("normal");
+      setThemeMode(isRedZone ? "redzone" : "normal");
       setPoemPulse(false);
       setPoemSweep(false);
       startNormalBgm();
+      setStatusText(isRedZone ? "마물연구부로 리다이렉트됨..." : "접근 승인됨...");
     }
 
     openDocumentTimeoutRef.current = window.setTimeout(() => {
@@ -666,13 +685,20 @@ export default function App() {
   };
 
   const isPoemTheme = themeMode === "poem";
+  const isRedZoneTheme = themeMode === "redzone";
+  const currentTopLogo = isRedZoneTheme ? "/redzone-logo.png" : "logo.png";
+  const currentTopTitle = isRedZoneTheme
+    ? "NEW SAN DIEGO BUREAU OF RED ZONE DEFENSE"
+    : "NEW SAN DIEGO INTELLIGENCE AGENCY";
   const showIntroOverlay = introVisible;
 
   return (
     <div
       style={{
         position: "relative",
-        background: isPoemTheme
+        background: isRedZoneTheme
+          ? "linear-gradient(180deg, #170303 0%, #2a0707 18%, #410808 42%, #5e0d0d 68%, #160202 100%)"
+          : isPoemTheme
           ? "linear-gradient(180deg, #35172f 0%, #542445 26%, #7e3b6c 52%, #c26ea1 76%, #ffd2e9 100%)"
           : "linear-gradient(180deg, #06111f 0%, #040b14 100%)",
         minHeight: "100vh",
@@ -688,6 +714,8 @@ export default function App() {
           "background 1.1s ease, filter 0.35s ease, transform 0.2s ease, padding 0.55s ease",
         filter: poemPulse
           ? "brightness(1.2) saturate(1.2) hue-rotate(-8deg)"
+          : isRedZoneTheme
+          ? "brightness(1.06) saturate(1.06) hue-rotate(-8deg)"
           : isPoemTheme
           ? "brightness(1.06) saturate(1.08)"
           : "none",
@@ -858,7 +886,7 @@ export default function App() {
               }}
             >
               <img
-                src="logo.png"
+                src={currentTopLogo}
                 alt="agency logo"
                 style={{
                   width: "min(180px, 42vw)",
@@ -879,7 +907,7 @@ export default function App() {
                     : "0 0 12px rgba(170,220,255,0.12)",
                 }}
               >
-                NEW SAN DIEGO INTELLIGENCE AGENCY
+                {currentTopTitle}
               </div>
             </div>
           </div>
@@ -969,15 +997,19 @@ export default function App() {
                 margin: "8px 0 0",
                 fontSize: "clamp(18px, 4vw, 28px)",
                 textShadow: glitch
-                  ? isPoemTheme
+                  ? isRedZoneTheme
+                    ? "1px 0 rgba(255,120,120,0.28), -1px 0 rgba(255,40,40,0.22)"
+                    : isPoemTheme
                     ? "1px 0 rgba(255,180,220,0.25), -1px 0 rgba(255,245,250,0.18)"
                     : "1px 0 rgba(255,0,70,0.2), -1px 0 rgba(80,180,255,0.2)"
+                  : isRedZoneTheme
+                  ? "0 0 14px rgba(255, 90, 90, 0.16)"
                   : isPoemTheme
                   ? "0 0 14px rgba(255, 210, 235, 0.14)"
                   : "0 0 10px rgba(180,220,255,0.05)",
               }}
             >
-              NEW SAN DIEGO INTELLIGENCE AGENCY
+              {currentTopTitle}
             </h2>
 
             <div
@@ -1012,6 +1044,8 @@ export default function App() {
                     : "1px solid rgba(160, 200, 255, 0.2)",
                   background: isPoemTheme
                     ? "rgba(72, 31, 60, 0.95)"
+                    : isRedZoneTheme
+                    ? "rgba(34, 8, 8, 0.96)"
                     : "rgba(8, 18, 32, 0.95)",
                   color: "#ffffff",
                   outline: "none",
@@ -1032,7 +1066,7 @@ export default function App() {
                   border: isPoemTheme
                     ? "1px solid rgba(255, 220, 240, 0.28)"
                     : "1px solid rgba(160, 200, 255, 0.25)",
-                  background: isPoemTheme ? "#8d4a79" : "#0f2340",
+                  background: isPoemTheme ? "#8d4a79" : isRedZoneTheme ? "#4a1212" : "#0f2340",
                   color: "#ffffff",
                   cursor: "pointer",
                   fontFamily: "monospace",
@@ -1052,8 +1086,8 @@ export default function App() {
                     border: isPoemTheme
                       ? "1px solid rgba(255, 235, 245, 0.22)"
                       : "1px solid rgba(255, 255, 255, 0.15)",
-                    background: isPoemTheme ? "#63324f" : "#122b1d",
-                    color: isPoemTheme ? "#fff0f8" : "#dfffe8",
+                    background: isPoemTheme ? "#63324f" : isRedZoneTheme ? "#3a0c0c" : "#122b1d",
+                    color: isPoemTheme ? "#fff0f8" : isRedZoneTheme ? "#ffd4d4" : "#dfffe8",
                     cursor: "pointer",
                     fontFamily: "monospace",
                     fontSize: "14px",
@@ -1072,9 +1106,11 @@ export default function App() {
                   ? "#ff5252"
                   : statusText === "ACCESS DENIED"
                   ? "#ff9494"
+                  : isRedZoneTheme
+                  ? "#ffb8b8"
                   : isPoemTheme
                   ? "#ffe5f3"
-                  : "#bcd4ff",
+                  : isRedZoneTheme ? "#ffbebe" : "#bcd4ff",
                 fontSize: "14px",
                 textAlign: "center",
                 letterSpacing: "0.5px",
@@ -1083,6 +1119,8 @@ export default function App() {
                 animation: isDenied ? "deniedFlashSoft 0.55s infinite" : "none",
                 textShadow: isDenied
                   ? "0 0 8px rgba(255, 0, 0, 0.25)"
+                  : isRedZoneTheme
+                  ? "0 0 10px rgba(255, 80, 80, 0.18)"
                   : isPoemTheme
                   ? "0 0 10px rgba(255, 215, 235, 0.14)"
                   : "none",
@@ -1104,7 +1142,7 @@ export default function App() {
                   }}
                 >
                   <img
-                    src="logo.png"
+                    src={currentTopLogo}
                     alt="agency logo"
                     style={{
                       width: "min(160px, 42vw)",
@@ -1119,14 +1157,14 @@ export default function App() {
                     style={{
                       fontSize: "14px",
                       letterSpacing: "3px",
-                      color: isPoemTheme ? "#ffe6f3" : "#bcd4ff",
+                      color: isPoemTheme ? "#ffe6f3" : isRedZoneTheme ? "#ffbebe" : "#bcd4ff",
                       wordBreak: "break-word",
                       textShadow: isPoemTheme
                         ? "0 0 10px rgba(255, 210, 235, 0.14)"
                         : "none",
                     }}
                   >
-                    뉴 샌디에이고 데이터 체계
+                    뉴 샌디에이고 정보 체계
                   </div>
                 </div>
 
@@ -1136,15 +1174,21 @@ export default function App() {
                     marginTop: "24px",
                     background: isPoemTheme
                       ? "rgba(86, 38, 72, 0.86)"
+                      : isRedZoneTheme
+                      ? "rgba(28, 8, 8, 0.86)"
                       : "rgba(9, 19, 33, 0.84)",
                     border: isPoemTheme
                       ? "1px solid rgba(255, 220, 240, 0.18)"
+                      : isRedZoneTheme
+                      ? "1px solid rgba(255, 120, 120, 0.18)"
                       : "1px solid rgba(160, 200, 255, 0.16)",
                     borderRadius: "14px",
                     padding: "16px",
                     boxSizing: "border-box",
                     boxShadow: isPoemTheme
                       ? "0 0 24px rgba(255, 180, 220, 0.08)"
+                      : isRedZoneTheme
+                      ? "0 0 24px rgba(110, 0, 0, 0.18)"
                       : "0 0 20px rgba(0, 0, 0, 0.2)",
                   }}
                 >
@@ -1160,7 +1204,7 @@ export default function App() {
                   >
                     <div
                       style={{
-                        color: isPoemTheme ? "#ffd4ea" : "#9ec2ff",
+                        color: isPoemTheme ? "#ffd4ea" : isRedZoneTheme ? "#ffb1b1" : "#9ec2ff",
                         fontSize: "13px",
                         letterSpacing: "1.3px",
                       }}
@@ -1190,7 +1234,7 @@ export default function App() {
                   <div
                     style={{
                       marginBottom: "12px",
-                      color: isPoemTheme ? "#ffe5f3" : "#bcd4ff",
+                      color: isPoemTheme ? "#ffe5f3" : isRedZoneTheme ? "#ffbebe" : "#bcd4ff",
                       fontSize: "12px",
                       letterSpacing: "0.8px",
                       lineHeight: "1.6",
@@ -1199,7 +1243,7 @@ export default function App() {
                     열람한 기록: <span style={{ color: "#ffffff" }}>{history.length}</span>
                     {" / "}
                     현재 존재하는 기록:{" "}
-                    <span style={{ color: isPoemTheme ? "#ffd4ea" : "#9ec2ff" }}>
+                    <span style={{ color: isPoemTheme ? "#ffd4ea" : isRedZoneTheme ? "#ffb1b1" : "#9ec2ff" }}>
                       {normalizedDatabase.length}
                     </span>
                   </div>
@@ -1207,7 +1251,7 @@ export default function App() {
                   {history.length === 0 ? (
                     <div
                       style={{
-                        color: isPoemTheme ? "#f4d8e8" : "#8ea8cf",
+                        color: isPoemTheme ? "#f4d8e8" : isRedZoneTheme ? "#d6a3a3" : "#8ea8cf",
                         fontSize: "13px",
                         lineHeight: "1.7",
                       }}
@@ -1236,7 +1280,7 @@ export default function App() {
                               : "1px solid rgba(160, 200, 255, 0.14)",
                             borderRadius: "10px",
                             padding: "12px",
-                            color: "#eaf2ff",
+                            color: isRedZoneTheme ? "#fff0f0" : "#eaf2ff",
                             cursor: "pointer",
                             fontFamily: "monospace",
                           }}
@@ -1260,7 +1304,7 @@ export default function App() {
                             <div
                               style={{
                                 fontSize: "12px",
-                                color: isPoemTheme ? "#f2cbe0" : "#8ea8cf",
+                                color: isPoemTheme ? "#f2cbe0" : isRedZoneTheme ? "#d6a3a3" : "#8ea8cf",
                               }}
                             >
                               {formatOpenedTime(item.openedAt)}
@@ -1271,7 +1315,7 @@ export default function App() {
                             style={{
                               marginTop: "6px",
                               fontSize: "12px",
-                              color: isPoemTheme ? "#ffd4ea" : "#9ec2ff",
+                              color: isPoemTheme ? "#ffd4ea" : isRedZoneTheme ? "#ffb1b1" : "#9ec2ff",
                               letterSpacing: "1px",
                             }}
                           >
@@ -1342,7 +1386,7 @@ export default function App() {
                   <p
                     style={{
                       margin: 0,
-                      color: isPoemTheme ? "#ffe6f3" : "#bcd4ff",
+                      color: isPoemTheme ? "#ffe6f3" : isRedZoneTheme ? "#ffbebe" : "#bcd4ff",
                       fontSize: "14px",
                       lineHeight: "1.6",
                       wordBreak: "break-word",
@@ -1404,7 +1448,7 @@ export default function App() {
                 >
                   <div
                     style={{
-                      color: isPoemTheme ? "#ffd4ea" : "#8fb7ff",
+                      color: isPoemTheme ? "#ffd4ea" : isRedZoneTheme ? "#ffb7b7" : "#8fb7ff",
                       fontSize: "12px",
                       marginBottom: "10px",
                       letterSpacing: "1.5px",
@@ -1423,7 +1467,7 @@ export default function App() {
                       maxWidth: "100%",
                       fontSize: "14px",
                       lineHeight: "1.78",
-                      color: isPoemTheme ? "#fff6fb" : "#eaf2ff",
+                      color: isPoemTheme ? "#fff6fb" : isRedZoneTheme ? "#fff0f0" : "#eaf2ff",
                       textShadow: isPoemTheme
                         ? "0 0 8px rgba(255, 220, 238, 0.06)"
                         : "0 0 6px rgba(180, 220, 255, 0.03)",
