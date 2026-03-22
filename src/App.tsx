@@ -7,11 +7,13 @@ type IntelEntry = {
   subtitle: string;
   image: string;
   text: string;
-  classification?: string;
+  classification?: "마물";
 };
 
 type BootStage = "intro" | "collapse" | "reboot" | "ready";
 type ThemeMode = "normal" | "poem" | "redzone";
+type SystemMode = "intel" | "redzone";
+type TransitionTarget = SystemMode | null;
 
 type HistoryItem = {
   code: string;
@@ -19,12 +21,20 @@ type HistoryItem = {
   openedAt: number;
 };
 
-const HISTORY_STORAGE_KEY = "intel_terminal_history_v1";
+type NormalizedEntry = IntelEntry & {
+  normalizedCode: string;
+};
+
+const HISTORY_STORAGE_KEYS: Record<SystemMode, string> = {
+  intel: "intel_terminal_history_v2",
+  redzone: "redzone_terminal_history_v1",
+};
+
 const MAX_HISTORY = 12;
 const POEM_CODE = "P0EM";
-const RED_ZONE_CLASSIFICATION = "마물";
+const REDZONE_GATE_CODE = "R3DZ0NE";
 
-const bootLines = [
+const intelBootLines = [
   "보안성 검토 중...",
   "방첩 프로토콜 가동...",
   "내부 인증 채널 동기화...",
@@ -35,6 +45,24 @@ const bootLines = [
   "이상 없음.",
   "최종 승인됨.",
 ];
+
+const redzoneBootLines = [
+  "격리 채널 동기화...",
+  "오염 자료 인덱스 결속...",
+  "레드존 접근 토큰 검증...",
+  "현장 대응 기록 연결 중...",
+  "적성 개체 분류표 대조...",
+  "봉인 프로토콜 준비 중...",
+  "위험 등급 재산정...",
+  "경계 상태 유지.",
+  "접속 승인됨.",
+];
+
+const getSystemTheme = (systemMode: SystemMode, selectedIntel: IntelEntry | null): ThemeMode => {
+  if (systemMode === "redzone") return "redzone";
+  if (selectedIntel?.code?.trim().toUpperCase() === POEM_CODE) return "poem";
+  return "normal";
+};
 
 export default function App() {
   const [bootStage, setBootStage] = useState<BootStage>("intro");
@@ -51,9 +79,13 @@ export default function App() {
   const [themeMode, setThemeMode] = useState<ThemeMode>("normal");
   const [poemPulse, setPoemPulse] = useState(false);
   const [poemSweep, setPoemSweep] = useState(false);
+  const [systemMode, setSystemMode] = useState<SystemMode>("intel");
+  const [transitionTarget, setTransitionTarget] = useState<TransitionTarget>(null);
+  const [transitionVisible, setTransitionVisible] = useState(false);
 
   const bgmRef = useRef<HTMLAudioElement | null>(null);
   const poemBgmRef = useRef<HTMLAudioElement | null>(null);
+  const redzoneBgmRef = useRef<HTMLAudioElement | null>(null);
   const bootSoundRef = useRef<HTMLAudioElement | null>(null);
   const openSoundRef = useRef<HTMLAudioElement | null>(null);
   const deniedSoundRef = useRef<HTMLAudioElement | null>(null);
@@ -70,30 +102,32 @@ export default function App() {
   const poemPulseTimeoutRef = useRef<number | null>(null);
   const poemSweepTimeoutRef = useRef<number | null>(null);
   const introHideTimeoutRef = useRef<number | null>(null);
+  const systemSwitchTimeoutRef = useRef<number | null>(null);
 
-  const normalizedDatabase = useMemo(() => {
-    return intelDatabase.map((item) => ({
-      code: item.code,
-      title: item.title,
-      subtitle: item.subtitle,
-      image: item.image,
-      text: item.text,
-      classification: item.classification,
+  const normalizedDatabase = useMemo<NormalizedEntry[]>(() => {
+    return (intelDatabase as IntelEntry[]).map((item) => ({
+      ...item,
       normalizedCode: item.code.trim().toUpperCase(),
-      normalizedClassification: (item.classification ?? "").trim().toUpperCase(),
     }));
   }, []);
 
-  const isRedZoneEntry = (entry: Pick<IntelEntry, "classification">) =>
-    (entry.classification ?? "").trim().toUpperCase() === RED_ZONE_CLASSIFICATION;
+  const intelDatabaseEntries = useMemo(
+    () => normalizedDatabase.filter((item) => item.classification !== "마물"),
+    [normalizedDatabase]
+  );
 
-  const getThemeModeForEntry = (entry: Pick<IntelEntry, "code" | "classification">): ThemeMode => {
-    const normalizedCode = entry.code.trim().toUpperCase();
+  const redzoneDatabaseEntries = useMemo(
+    () => normalizedDatabase.filter((item) => item.classification === "마물"),
+    [normalizedDatabase]
+  );
 
-    if (normalizedCode === POEM_CODE) return "poem";
-    if (isRedZoneEntry(entry)) return "redzone";
-    return "normal";
-  };
+  const activeDatabase = systemMode === "redzone" ? redzoneDatabaseEntries : intelDatabaseEntries;
+  const activeBootLines = transitionTarget === "redzone" ? redzoneBootLines : intelBootLines;
+
+  const isPoemTheme = themeMode === "poem";
+  const isRedzoneTheme = themeMode === "redzone";
+  const showIntroOverlay = introVisible;
+  const showTransitionOverlay = transitionVisible;
 
   const safePlay = (audio: HTMLAudioElement | null, reset = false) => {
     if (!audio) return;
@@ -104,46 +138,58 @@ export default function App() {
         playPromise.catch(() => {});
       }
     } catch {
-      //
+      // noop
     }
+  };
+
+  const stopAllBgm = () => {
+    [bgmRef.current, poemBgmRef.current, redzoneBgmRef.current].forEach((audio) => {
+      if (!audio) return;
+      try {
+        audio.pause();
+        audio.currentTime = 0;
+      } catch {
+        // noop
+      }
+    });
   };
 
   const startNormalBgm = () => {
     if (!bgmRef.current) return;
     try {
-      if (poemBgmRef.current) {
-        poemBgmRef.current.pause();
-        poemBgmRef.current.currentTime = 0;
-      }
+      stopAllBgm();
       bgmRef.current.loop = true;
-      if (bgmRef.current.paused) {
-        bgmRef.current.currentTime = 0;
-      }
       bgmRef.current.play().catch(() => {});
     } catch {
-      //
+      // noop
     }
   };
 
   const startPoemBgm = () => {
     if (!poemBgmRef.current) return;
     try {
-      if (bgmRef.current) {
-        bgmRef.current.pause();
-        bgmRef.current.currentTime = 0;
-      }
+      stopAllBgm();
       poemBgmRef.current.loop = true;
-      if (poemBgmRef.current.paused) {
-        poemBgmRef.current.currentTime = 0;
-      }
       poemBgmRef.current.play().catch(() => {});
     } catch {
-      //
+      // noop
+    }
+  };
+
+  const startRedzoneBgm = () => {
+    if (!redzoneBgmRef.current) return;
+    try {
+      stopAllBgm();
+      redzoneBgmRef.current.loop = true;
+      redzoneBgmRef.current.play().catch(() => {});
+    } catch {
+      // noop
     }
   };
 
   const startBgmForMode = (mode: ThemeMode) => {
     if (mode === "poem") startPoemBgm();
+    else if (mode === "redzone") startRedzoneBgm();
     else startNormalBgm();
   };
 
@@ -153,7 +199,7 @@ export default function App() {
       clickSoundRef.current.currentTime = 0;
       clickSoundRef.current.play().catch(() => {});
     } catch {
-      //
+      // noop
     }
   };
 
@@ -169,13 +215,15 @@ export default function App() {
       audio.currentTime = Math.random() * 0.03;
       audio.play().catch(() => {});
     } catch {
-      //
+      // noop
     }
   };
 
-  const loadHistory = () => {
+  const getHistoryStorageKey = (mode: SystemMode) => HISTORY_STORAGE_KEYS[mode];
+
+  const loadHistory = (mode: SystemMode) => {
     try {
-      const raw = localStorage.getItem(HISTORY_STORAGE_KEY);
+      const raw = localStorage.getItem(getHistoryStorageKey(mode));
       if (!raw) return [];
       const parsed = JSON.parse(raw);
       if (!Array.isArray(parsed)) return [];
@@ -191,26 +239,27 @@ export default function App() {
     }
   };
 
-  const saveHistory = (nextHistory: HistoryItem[]) => {
+  const saveHistory = (mode: SystemMode, nextHistory: HistoryItem[]) => {
     try {
-      localStorage.setItem(HISTORY_STORAGE_KEY, JSON.stringify(nextHistory));
+      localStorage.setItem(getHistoryStorageKey(mode), JSON.stringify(nextHistory));
     } catch {
-      //
+      // noop
     }
   };
 
-  const addHistory = (entry: IntelEntry) => {
+  const addHistory = (entry: IntelEntry, mode: SystemMode) => {
     setHistory((prev) => {
+      const normalizedCode = entry.code.trim().toUpperCase();
       const next: HistoryItem[] = [
         {
-          code: entry.code.trim().toUpperCase(),
+          code: normalizedCode,
           title: entry.title,
           openedAt: Date.now(),
         },
-        ...prev.filter((item) => item.code !== entry.code.trim().toUpperCase()),
+        ...prev.filter((item) => item.code !== normalizedCode),
       ].slice(0, MAX_HISTORY);
 
-      saveHistory(next);
+      saveHistory(mode, next);
       return next;
     });
   };
@@ -219,11 +268,11 @@ export default function App() {
     playClick();
     setHistory([]);
     try {
-      localStorage.removeItem(HISTORY_STORAGE_KEY);
+      localStorage.removeItem(getHistoryStorageKey(systemMode));
     } catch {
-      //
+      // noop
     }
-    setStatusText("열람 기록이 삭제되었습니다.");
+    setStatusText(systemMode === "redzone" ? "적경국 열람 기록이 삭제되었습니다." : "열람 기록이 삭제되었습니다.");
   };
 
   const formatOpenedTime = (timestamp: number) => {
@@ -289,7 +338,9 @@ export default function App() {
     }, 950);
   };
 
-  const openDocument = (entry: IntelEntry) => {
+  const resetTransientStates = () => {
+    stopDeniedAlarm();
+
     if (typingTimeoutRef.current) {
       window.clearTimeout(typingTimeoutRef.current);
       typingTimeoutRef.current = null;
@@ -300,39 +351,88 @@ export default function App() {
       openDocumentTimeoutRef.current = null;
     }
 
-    stopDeniedAlarm();
+    if (poemPulseTimeoutRef.current) {
+      window.clearTimeout(poemPulseTimeoutRef.current);
+      poemPulseTimeoutRef.current = null;
+    }
+
+    if (poemSweepTimeoutRef.current) {
+      window.clearTimeout(poemSweepTimeoutRef.current);
+      poemSweepTimeoutRef.current = null;
+    }
+
+    setPoemPulse(false);
+    setPoemSweep(false);
     setDisplayedText("");
+    setSelectedIntel(null);
+  };
+
+  const openDocument = (entry: IntelEntry, mode: SystemMode) => {
+    resetTransientStates();
     setStatusText("접근 승인됨...");
     safePlay(openSoundRef.current, true);
 
-    const nextThemeMode = getThemeModeForEntry(entry);
-    const isPoem = nextThemeMode === "poem";
-    const isRedZone = nextThemeMode === "redzone";
+    const nextTheme = getSystemTheme(mode, entry);
+    setThemeMode(nextTheme);
 
-    if (isPoem) {
-      setThemeMode("poem");
+    if (nextTheme === "poem") {
       triggerPoemPulse();
       startPoemBgm();
-      setStatusText("접근 승인됨...");
+    } else if (nextTheme === "redzone") {
+      startRedzoneBgm();
     } else {
-      setThemeMode(isRedZone ? "redzone" : "normal");
-      setPoemPulse(false);
-      setPoemSweep(false);
       startNormalBgm();
-      setStatusText(isRedZone ? "마물연구부로 리다이렉트됨..." : "접근 승인됨...");
     }
 
     openDocumentTimeoutRef.current = window.setTimeout(() => {
       setSelectedIntel(entry);
       setInputCode(entry.code.trim().toUpperCase());
       setStatusText(entry.title + " 문서 열람 중");
-      addHistory(entry);
+      addHistory(entry, mode);
     }, 500);
   };
 
+  const switchSystem = (target: SystemMode) => {
+    if (target === systemMode) return;
+
+    resetTransientStates();
+    setTransitionTarget(target);
+    setVisibleBootLines([]);
+    setTransitionVisible(true);
+    setInputCode("");
+    setStatusText(target === "redzone" ? "접속중..." : "정보체계 접속중...");
+    safePlay(bootSoundRef.current, true);
+
+    if (target === "redzone") {
+      setThemeMode("redzone");
+      startRedzoneBgm();
+    } else {
+      setThemeMode("normal");
+      startNormalBgm();
+    }
+
+    if (systemSwitchTimeoutRef.current) {
+      window.clearTimeout(systemSwitchTimeoutRef.current);
+      systemSwitchTimeoutRef.current = null;
+    }
+
+    systemSwitchTimeoutRef.current = window.setTimeout(() => {
+      setSystemMode(target);
+      setHistory(loadHistory(target));
+      setTransitionVisible(false);
+      setTransitionTarget(null);
+      setStatusText(
+        target === "redzone"
+          ? "적경국 접속 승인됨. 코드 입력 대기 중."
+          : "접근 승인됨. 코드 입력 대기 중."
+      );
+      systemSwitchTimeoutRef.current = null;
+    }, 2200);
+  };
+
   useEffect(() => {
-    setHistory(loadHistory());
-  }, []);
+    setHistory(loadHistory(systemMode));
+  }, [systemMode]);
 
   useEffect(() => {
     bgmRef.current = new Audio("/sounds/bgm.mp3");
@@ -344,6 +444,11 @@ export default function App() {
     poemBgmRef.current.loop = true;
     poemBgmRef.current.volume = 0.26;
     poemBgmRef.current.preload = "auto";
+
+    redzoneBgmRef.current = new Audio("/sounds/redzone.mp3");
+    redzoneBgmRef.current.loop = true;
+    redzoneBgmRef.current.volume = 0.25;
+    redzoneBgmRef.current.preload = "auto";
 
     bootSoundRef.current = new Audio("/sounds/boot.mp3");
     bootSoundRef.current.volume = 0.55;
@@ -390,11 +495,13 @@ export default function App() {
       if (poemPulseTimeoutRef.current) window.clearTimeout(poemPulseTimeoutRef.current);
       if (poemSweepTimeoutRef.current) window.clearTimeout(poemSweepTimeoutRef.current);
       if (introHideTimeoutRef.current) window.clearTimeout(introHideTimeoutRef.current);
+      if (systemSwitchTimeoutRef.current) window.clearTimeout(systemSwitchTimeoutRef.current);
       if (deniedLoopRef.current) window.clearInterval(deniedLoopRef.current);
 
       [
         bgmRef.current,
         poemBgmRef.current,
+        redzoneBgmRef.current,
         bootSoundRef.current,
         openSoundRef.current,
         deniedSoundRef.current,
@@ -407,7 +514,7 @@ export default function App() {
           audio.pause();
           audio.src = "";
         } catch {
-          //
+          // noop
         }
       });
     };
@@ -421,7 +528,7 @@ export default function App() {
       if (!mounted) return;
 
       setVisibleBootLines((prev) => {
-        const next = [...prev, bootLines[flowIndex % bootLines.length]];
+        const next = [...prev, intelBootLines[flowIndex % intelBootLines.length]];
         flowIndex += 1;
         return next.slice(-16);
       });
@@ -474,6 +581,30 @@ export default function App() {
       }
     };
   }, [bootStage]);
+
+  useEffect(() => {
+    if (!transitionVisible) return;
+
+    let flowIndex = 0;
+    setVisibleBootLines([]);
+
+    const lineTimer = window.setInterval(() => {
+      setVisibleBootLines((prev) => {
+        const next = [...prev, activeBootLines[flowIndex % activeBootLines.length]];
+        flowIndex += 1;
+        return next.slice(-14);
+      });
+
+      if (Math.random() > 0.75) {
+        setGlitch(true);
+        window.setTimeout(() => setGlitch(false), 60);
+      }
+    }, 140);
+
+    return () => {
+      window.clearInterval(lineTimer);
+    };
+  }, [transitionVisible, activeBootLines]);
 
   useEffect(() => {
     const interval = window.setInterval(() => {
@@ -607,66 +738,41 @@ export default function App() {
       return;
     }
 
-    const found = normalizedDatabase.find((item) => item.normalizedCode === code);
+    if (systemMode === "intel" && code === REDZONE_GATE_CODE) {
+      switchSystem("redzone");
+      return;
+    }
+
+    const found = activeDatabase.find((item) => item.normalizedCode === code);
 
     if (found) {
-      openDocument(found);
-    } else {
-      if (typingTimeoutRef.current) {
-        window.clearTimeout(typingTimeoutRef.current);
-        typingTimeoutRef.current = null;
-      }
-
-      if (openDocumentTimeoutRef.current) {
-        window.clearTimeout(openDocumentTimeoutRef.current);
-        openDocumentTimeoutRef.current = null;
-      }
-
-      setThemeMode("normal");
-      setPoemPulse(false);
-      setPoemSweep(false);
-      startNormalBgm();
-      setSelectedIntel(null);
-      setDisplayedText("");
-      setStatusText("ACCESS DENIED");
-      startDeniedAlarm();
+      openDocument(found, systemMode);
+      return;
     }
+
+    if (systemMode === "intel") {
+      const monsterFound = redzoneDatabaseEntries.find((item) => item.normalizedCode === code);
+      if (monsterFound) {
+        setStatusText("해당 기록은 적경국 전용입니다. r3dz0ne으로 접속하십시오.");
+        startDeniedAlarm();
+        return;
+      }
+    }
+
+    resetTransientStates();
+    setThemeMode(systemMode === "redzone" ? "redzone" : "normal");
+    startBgmForMode(systemMode === "redzone" ? "redzone" : "normal");
+    setStatusText("ACCESS DENIED");
+    startDeniedAlarm();
   };
 
   const handleReset = () => {
     playClick();
-
-    if (typingTimeoutRef.current) {
-      window.clearTimeout(typingTimeoutRef.current);
-      typingTimeoutRef.current = null;
-    }
-
-    if (openDocumentTimeoutRef.current) {
-      window.clearTimeout(openDocumentTimeoutRef.current);
-      openDocumentTimeoutRef.current = null;
-    }
-
-    if (poemPulseTimeoutRef.current) {
-      window.clearTimeout(poemPulseTimeoutRef.current);
-      poemPulseTimeoutRef.current = null;
-    }
-
-    if (poemSweepTimeoutRef.current) {
-      window.clearTimeout(poemSweepTimeoutRef.current);
-      poemSweepTimeoutRef.current = null;
-    }
-
-    setThemeMode("normal");
-    setPoemPulse(false);
-    setPoemSweep(false);
-    startNormalBgm();
-
-    stopDeniedAlarm();
-    setSelectedIntel(null);
-    setDisplayedText("");
+    resetTransientStates();
     setInputCode("");
-    setStatusText("대기 중. 접근 코드를 입력하세요.");
-
+    setThemeMode(systemMode === "redzone" ? "redzone" : "normal");
+    startBgmForMode(systemMode === "redzone" ? "redzone" : "normal");
+    setStatusText(systemMode === "redzone" ? "적경국 대기 중. 접근 코드를 입력하세요." : "대기 중. 접근 코드를 입력하세요.");
     safePlay(closeSoundRef.current, true);
   };
 
@@ -674,33 +780,35 @@ export default function App() {
     startBgmForMode(themeMode);
     playClick();
 
-    const found = normalizedDatabase.find((item) => item.normalizedCode === code);
+    const found = activeDatabase.find((item) => item.normalizedCode === code);
 
     if (!found) {
       setStatusText("기록된 문서를 현재 데이터베이스에서 찾을 수 없습니다.");
       return;
     }
 
-    openDocument(found);
+    openDocument(found, systemMode);
   };
 
-  const isPoemTheme = themeMode === "poem";
-  const isRedZoneTheme = themeMode === "redzone";
-  const currentTopLogo = isRedZoneTheme ? "/redzone-logo.png" : "logo.png";
-  const currentTopTitle = isRedZoneTheme
+  const topTitle = isRedzoneTheme
     ? "NEW SAN DIEGO BUREAU OF RED ZONE DEFENSE"
     : "NEW SAN DIEGO INTELLIGENCE AGENCY";
-  const showIntroOverlay = introVisible;
+  const topLogoSrc = isRedzoneTheme ? "/redzone-logo.png" : "logo.png";
+  const bottomLabel = "뉴 샌디에이고 데이터 체계";
+  const historyTitle = isRedzoneTheme ? "RED ZONE ACCESS LOG" : "RECENT ACCESS LOG";
+  const switchButtonLabel = isRedzoneTheme ? "정보체계로" : "적경국 접속";
+
+  const backgroundStyle = isRedzoneTheme
+    ? "linear-gradient(180deg, #190609 0%, #27090d 18%, #3a0d11 38%, #5a1117 64%, #110204 100%)"
+    : isPoemTheme
+    ? "linear-gradient(180deg, #35172f 0%, #542445 26%, #7e3b6c 52%, #c26ea1 76%, #ffd2e9 100%)"
+    : "linear-gradient(180deg, #06111f 0%, #040b14 100%)";
 
   return (
     <div
       style={{
         position: "relative",
-        background: isRedZoneTheme
-          ? "linear-gradient(180deg, #170303 0%, #2a0707 18%, #410808 42%, #5e0d0d 68%, #160202 100%)"
-          : isPoemTheme
-          ? "linear-gradient(180deg, #35172f 0%, #542445 26%, #7e3b6c 52%, #c26ea1 76%, #ffd2e9 100%)"
-          : "linear-gradient(180deg, #06111f 0%, #040b14 100%)",
+        background: backgroundStyle,
         minHeight: "100vh",
         color: "#ffffff",
         padding: showIntroOverlay ? "0" : "20px 14px 40px",
@@ -710,14 +818,13 @@ export default function App() {
         alignItems: "center",
         boxSizing: "border-box",
         overflow: "hidden",
-        transition:
-          "background 1.1s ease, filter 0.35s ease, transform 0.2s ease, padding 0.55s ease",
+        transition: "background 1.1s ease, filter 0.35s ease, transform 0.2s ease, padding 0.55s ease",
         filter: poemPulse
           ? "brightness(1.2) saturate(1.2) hue-rotate(-8deg)"
-          : isRedZoneTheme
-          ? "brightness(1.06) saturate(1.06) hue-rotate(-8deg)"
           : isPoemTheme
           ? "brightness(1.06) saturate(1.08)"
+          : isRedzoneTheme
+          ? "brightness(1.02) saturate(1.06)"
           : "none",
         transform: poemPulse ? "scale(1.005)" : "scale(1)",
       }}
@@ -819,9 +926,7 @@ export default function App() {
               opacity: bootStage === "collapse" ? 0.58 : bootStage === "reboot" ? 0.94 : 1,
               transition:
                 "transform 0.38s cubic-bezier(0.22, 1, 0.36, 1), opacity 0.32s ease",
-              filter: glitch
-                ? "contrast(1.1) brightness(1.05) saturate(0.98)"
-                : "none",
+              filter: glitch ? "contrast(1.1) brightness(1.05) saturate(0.98)" : "none",
             }}
           >
             <div
@@ -841,8 +946,7 @@ export default function App() {
                   position: "relative",
                   overflow: "hidden",
                   maskImage: "radial-gradient(circle at center, black 52%, transparent 100%)",
-                  WebkitMaskImage:
-                    "radial-gradient(circle at center, black 52%, transparent 100%)",
+                  WebkitMaskImage: "radial-gradient(circle at center, black 52%, transparent 100%)",
                 }}
               >
                 {visibleBootLines.map((line, index) => {
@@ -857,9 +961,7 @@ export default function App() {
                         top: `${10 + row * 10}%`,
                         whiteSpace: "nowrap",
                         color:
-                          index % 2 === 0
-                            ? "rgba(175,215,255,0.2)"
-                            : "rgba(255,255,255,0.1)",
+                          index % 2 === 0 ? "rgba(175,215,255,0.2)" : "rgba(255,255,255,0.1)",
                         fontSize: row % 2 === 0 ? "13px" : "12px",
                         letterSpacing: "1px",
                         textShadow: "0 0 8px rgba(130,185,255,0.1)",
@@ -886,12 +988,11 @@ export default function App() {
               }}
             >
               <img
-                src={currentTopLogo}
+                src="logo.png"
                 alt="agency logo"
                 style={{
                   width: "min(180px, 42vw)",
-                  filter:
-                    "brightness(1.2) drop-shadow(0 0 12px rgba(160,220,255,0.18))",
+                  filter: "brightness(1.2) drop-shadow(0 0 12px rgba(160,220,255,0.18))",
                   transform: glitch ? "translateX(1px)" : "none",
                   transition: "transform 0.08s linear",
                 }}
@@ -907,7 +1008,167 @@ export default function App() {
                     : "0 0 12px rgba(170,220,255,0.12)",
                 }}
               >
-                {currentTopTitle}
+                NEW SAN DIEGO INTELLIGENCE AGENCY
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showTransitionOverlay && !showIntroOverlay && (
+        <div
+          style={{
+            position: "absolute",
+            inset: 0,
+            zIndex: 18,
+            background:
+              transitionTarget === "redzone"
+                ? "radial-gradient(circle at 50% 40%, rgba(145,18,28,0.16) 0%, rgba(10,2,4,0.96) 56%, #040102 100%)"
+                : "radial-gradient(circle at 50% 40%, rgba(26,96,180,0.12) 0%, rgba(4,10,18,0.94) 56%, #02060a 100%)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            overflow: "hidden",
+          }}
+        >
+          <div
+            style={{
+              position: "absolute",
+              inset: 0,
+              opacity: 0.1,
+              background:
+                "repeating-linear-gradient(to bottom, rgba(255,255,255,0.08) 0px, rgba(255,255,255,0.08) 1px, transparent 2px, transparent 5px)",
+              mixBlendMode: "screen",
+            }}
+          />
+
+          <div
+            style={{
+              position: "absolute",
+              inset: 0,
+              pointerEvents: "none",
+              backgroundImage:
+                transitionTarget === "redzone"
+                  ? "radial-gradient(circle at 20% 20%, rgba(255,120,120,0.16) 0 1px, transparent 1px), radial-gradient(circle at 80% 35%, rgba(255,255,255,0.08) 0 1px, transparent 1px), radial-gradient(circle at 45% 70%, rgba(255,130,130,0.12) 0 1px, transparent 1px)"
+                  : "radial-gradient(circle at 20% 20%, rgba(255,255,255,0.14) 0 1px, transparent 1px), radial-gradient(circle at 80% 35%, rgba(255,255,255,0.1) 0 1px, transparent 1px), radial-gradient(circle at 45% 70%, rgba(255,255,255,0.12) 0 1px, transparent 1px)",
+              backgroundSize: "140px 140px, 180px 180px, 160px 160px",
+              animation: "noiseMoveSoft 1.2s linear infinite",
+              opacity: 0.06,
+            }}
+          />
+
+          <div
+            style={{
+              position: "relative",
+              width: "100%",
+              maxWidth: "980px",
+              height: "100vh",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              filter: glitch ? "contrast(1.08) brightness(1.05)" : "none",
+            }}
+          >
+            <div
+              style={{
+                position: "absolute",
+                inset: 0,
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                pointerEvents: "none",
+              }}
+            >
+              <div
+                style={{
+                  width: "min(760px, 92vw)",
+                  height: "min(420px, 58vh)",
+                  position: "relative",
+                  overflow: "hidden",
+                  maskImage: "radial-gradient(circle at center, black 52%, transparent 100%)",
+                  WebkitMaskImage: "radial-gradient(circle at center, black 52%, transparent 100%)",
+                }}
+              >
+                {visibleBootLines.map((line, index) => {
+                  const row = index % 8;
+                  const leftBase = (index * 13) % 72;
+                  return (
+                    <div
+                      key={`switch-${line}-${index}`}
+                      style={{
+                        position: "absolute",
+                        left: `${leftBase}%`,
+                        top: `${12 + row * 10}%`,
+                        whiteSpace: "nowrap",
+                        color:
+                          transitionTarget === "redzone"
+                            ? index % 2 === 0
+                              ? "rgba(255,120,120,0.24)"
+                              : "rgba(255,220,220,0.1)"
+                            : index % 2 === 0
+                            ? "rgba(175,215,255,0.2)"
+                            : "rgba(255,255,255,0.1)",
+                        fontSize: row % 2 === 0 ? "13px" : "12px",
+                        letterSpacing: "1px",
+                        textShadow:
+                          transitionTarget === "redzone"
+                            ? "0 0 8px rgba(255,80,80,0.12)"
+                            : "0 0 8px rgba(130,185,255,0.1)",
+                        animation: `bootFlow ${3.1 + (index % 4) * 0.35}s linear forwards`,
+                      }}
+                    >
+                      &gt; {line}
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+
+            <div
+              style={{
+                position: "relative",
+                zIndex: 2,
+                display: "flex",
+                flexDirection: "column",
+                alignItems: "center",
+                gap: "18px",
+              }}
+            >
+              <img
+                src={transitionTarget === "redzone" ? "/redzone-logo.png" : "logo.png"}
+                alt="system logo"
+                style={{
+                  width: "min(190px, 42vw)",
+                  filter:
+                    transitionTarget === "redzone"
+                      ? "brightness(1.16) drop-shadow(0 0 16px rgba(255,70,70,0.22))"
+                      : "brightness(1.2) drop-shadow(0 0 12px rgba(160,220,255,0.18))",
+                }}
+              />
+              <div
+                style={{
+                  fontSize: "clamp(16px, 2.8vw, 22px)",
+                  letterSpacing: "5px",
+                  textAlign: "center",
+                  color: transitionTarget === "redzone" ? "#ffd7d7" : "#eef6ff",
+                  textShadow:
+                    transitionTarget === "redzone"
+                      ? "0 0 12px rgba(255,110,110,0.18)"
+                      : "0 0 12px rgba(170,220,255,0.12)",
+                }}
+              >
+                {transitionTarget === "redzone"
+                  ? "NEW SAN DIEGO BUREAU OF RED ZONE DEFENSE"
+                  : "NEW SAN DIEGO INTELLIGENCE AGENCY"}
+              </div>
+              <div
+                style={{
+                  color: transitionTarget === "redzone" ? "#ffb0b0" : "#bcd4ff",
+                  fontSize: "14px",
+                  letterSpacing: "2px",
+                }}
+              >
+                {transitionTarget === "redzone" ? "접속중..." : "정보체계 접속중..."}
               </div>
             </div>
           </div>
@@ -920,10 +1181,12 @@ export default function App() {
           inset: 0,
           pointerEvents: "none",
           zIndex: 0,
-          opacity: isPoemTheme ? 0.24 : 0,
-          background: poemPulse
-            ? "radial-gradient(circle at 50% 45%, rgba(255,244,250,0.5) 0%, rgba(255,185,225,0.22) 24%, rgba(255,150,215,0.08) 45%, transparent 72%)"
-            : "radial-gradient(circle at 50% 45%, rgba(255,244,250,0.24) 0%, rgba(255,185,225,0.12) 28%, transparent 72%)",
+          opacity: isPoemTheme ? 0.24 : isRedzoneTheme ? 0.18 : 0,
+          background: isPoemTheme
+            ? poemPulse
+              ? "radial-gradient(circle at 50% 45%, rgba(255,244,250,0.5) 0%, rgba(255,185,225,0.22) 24%, rgba(255,150,215,0.08) 45%, transparent 72%)"
+              : "radial-gradient(circle at 50% 45%, rgba(255,244,250,0.24) 0%, rgba(255,185,225,0.12) 28%, transparent 72%)"
+            : "radial-gradient(circle at 50% 42%, rgba(255,100,110,0.18) 0%, rgba(255,50,60,0.07) 30%, transparent 70%)",
           transition: "opacity 0.35s ease, background 0.3s ease",
         }}
       />
@@ -934,11 +1197,14 @@ export default function App() {
           inset: 0,
           pointerEvents: "none",
           zIndex: 0,
-          opacity: poemSweep ? 0.34 : 0,
-          background:
-            "linear-gradient(90deg, transparent 0%, rgba(255,255,255,0.18) 18%, rgba(255,210,235,0.24) 48%, rgba(255,255,255,0.16) 78%, transparent 100%)",
+          opacity: poemSweep ? 0.34 : isRedzoneTheme ? 0.1 : 0,
+          background: isPoemTheme
+            ? "linear-gradient(90deg, transparent 0%, rgba(255,255,255,0.18) 18%, rgba(255,210,235,0.24) 48%, rgba(255,255,255,0.16) 78%, transparent 100%)"
+            : "linear-gradient(90deg, transparent 0%, rgba(255,80,80,0.08) 22%, rgba(255,210,210,0.12) 48%, rgba(255,80,80,0.08) 74%, transparent 100%)",
           transform: poemSweep
             ? "translateX(0%) skewX(-14deg)"
+            : isRedzoneTheme
+            ? "translateX(-24%) skewX(-12deg)"
             : "translateX(-120%) skewX(-14deg)",
           transition: "transform 0.8s ease, opacity 0.38s ease",
         }}
@@ -950,15 +1216,21 @@ export default function App() {
           inset: 0,
           pointerEvents: "none",
           zIndex: 0,
-          opacity: isPoemTheme ? 0.1 : 0,
-          backgroundImage: `
-            radial-gradient(circle at 12% 20%, rgba(255,255,255,0.2) 0 2px, transparent 3px),
-            radial-gradient(circle at 85% 30%, rgba(255,220,238,0.18) 0 2px, transparent 3px),
-            radial-gradient(circle at 35% 78%, rgba(255,210,235,0.14) 0 2px, transparent 3px),
-            radial-gradient(circle at 70% 88%, rgba(255,240,248,0.1) 0 2px, transparent 3px)
-          `,
+          opacity: isPoemTheme ? 0.1 : isRedzoneTheme ? 0.06 : 0,
+          backgroundImage: isPoemTheme
+            ? `
+              radial-gradient(circle at 12% 20%, rgba(255,255,255,0.2) 0 2px, transparent 3px),
+              radial-gradient(circle at 85% 30%, rgba(255,220,238,0.18) 0 2px, transparent 3px),
+              radial-gradient(circle at 35% 78%, rgba(255,210,235,0.14) 0 2px, transparent 3px),
+              radial-gradient(circle at 70% 88%, rgba(255,240,248,0.1) 0 2px, transparent 3px)
+            `
+            : `
+              radial-gradient(circle at 20% 18%, rgba(255,140,140,0.12) 0 1px, transparent 1px),
+              radial-gradient(circle at 82% 35%, rgba(255,180,180,0.08) 0 1px, transparent 1px),
+              radial-gradient(circle at 42% 74%, rgba(255,120,120,0.1) 0 1px, transparent 1px)
+            `,
           backgroundSize: "220px 220px, 260px 260px, 240px 240px, 300px 300px",
-          animation: isPoemTheme ? "petalFloat 12s linear infinite" : "none",
+          animation: isPoemTheme ? "petalFloat 12s linear infinite" : isRedzoneTheme ? "noiseMoveSoft 3.2s linear infinite" : "none",
           transition: "opacity 0.4s ease",
         }}
       />
@@ -972,14 +1244,12 @@ export default function App() {
           display: "flex",
           flexDirection: "column",
           alignItems: "center",
-          transform: glitch
-            ? `translateX(1px) ${poemPulse ? "skewX(-0.5deg)" : ""}`
-            : poemPulse
-            ? "translateY(-1px)"
-            : "none",
+          transform: glitch ? `translateX(1px) ${poemPulse ? "skewX(-0.5deg)" : ""}` : poemPulse ? "translateY(-1px)" : "none",
           filter: glitch
             ? isPoemTheme
               ? "contrast(1.08) brightness(1.07) saturate(1.1)"
+              : isRedzoneTheme
+              ? "contrast(1.06) brightness(1.04) saturate(1.08)"
               : "contrast(1.08) brightness(1.04) saturate(0.98)"
             : "none",
           opacity: screenFlicker ? 0.975 : 1,
@@ -997,19 +1267,19 @@ export default function App() {
                 margin: "8px 0 0",
                 fontSize: "clamp(18px, 4vw, 28px)",
                 textShadow: glitch
-                  ? isRedZoneTheme
-                    ? "1px 0 rgba(255,120,120,0.28), -1px 0 rgba(255,40,40,0.22)"
-                    : isPoemTheme
+                  ? isPoemTheme
                     ? "1px 0 rgba(255,180,220,0.25), -1px 0 rgba(255,245,250,0.18)"
+                    : isRedzoneTheme
+                    ? "1px 0 rgba(255,100,100,0.22), -1px 0 rgba(255,210,210,0.16)"
                     : "1px 0 rgba(255,0,70,0.2), -1px 0 rgba(80,180,255,0.2)"
-                  : isRedZoneTheme
-                  ? "0 0 14px rgba(255, 90, 90, 0.16)"
                   : isPoemTheme
                   ? "0 0 14px rgba(255, 210, 235, 0.14)"
+                  : isRedzoneTheme
+                  ? "0 0 12px rgba(255, 90, 90, 0.12)"
                   : "0 0 10px rgba(180,220,255,0.05)",
               }}
             >
-              {currentTopTitle}
+              {topTitle}
             </h2>
 
             <div
@@ -1032,7 +1302,7 @@ export default function App() {
                 onKeyDown={(e) => {
                   if (e.key === "Enter") handleSubmit();
                 }}
-                placeholder="코드 입력"
+                placeholder={isRedzoneTheme ? "적경국 코드 입력" : "코드 입력"}
                 style={{
                   flex: "1 1 240px",
                   minWidth: "0",
@@ -1041,11 +1311,13 @@ export default function App() {
                   borderRadius: "10px",
                   border: isPoemTheme
                     ? "1px solid rgba(255, 220, 240, 0.28)"
+                    : isRedzoneTheme
+                    ? "1px solid rgba(255, 140, 140, 0.26)"
                     : "1px solid rgba(160, 200, 255, 0.2)",
                   background: isPoemTheme
                     ? "rgba(72, 31, 60, 0.95)"
-                    : isRedZoneTheme
-                    ? "rgba(34, 8, 8, 0.96)"
+                    : isRedzoneTheme
+                    ? "rgba(32, 9, 12, 0.95)"
                     : "rgba(8, 18, 32, 0.95)",
                   color: "#ffffff",
                   outline: "none",
@@ -1054,6 +1326,8 @@ export default function App() {
                   boxSizing: "border-box",
                   boxShadow: isPoemTheme
                     ? "inset 0 0 16px rgba(255, 215, 236, 0.08)"
+                    : isRedzoneTheme
+                    ? "inset 0 0 14px rgba(255, 90, 90, 0.08)"
                     : "inset 0 0 10px rgba(0,0,0,0.28)",
                 }}
               />
@@ -1065,8 +1339,10 @@ export default function App() {
                   borderRadius: "10px",
                   border: isPoemTheme
                     ? "1px solid rgba(255, 220, 240, 0.28)"
+                    : isRedzoneTheme
+                    ? "1px solid rgba(255, 140, 140, 0.25)"
                     : "1px solid rgba(160, 200, 255, 0.25)",
-                  background: isPoemTheme ? "#8d4a79" : isRedZoneTheme ? "#4a1212" : "#0f2340",
+                  background: isPoemTheme ? "#8d4a79" : isRedzoneTheme ? "#4e1117" : "#0f2340",
                   color: "#ffffff",
                   cursor: "pointer",
                   fontFamily: "monospace",
@@ -1077,6 +1353,31 @@ export default function App() {
                 확인
               </button>
 
+              {!selectedIntel && (
+                <button
+                  onClick={() => {
+                    playClick();
+                    if (isRedzoneTheme) switchSystem("intel");
+                    else switchSystem("redzone");
+                  }}
+                  style={{
+                    padding: "12px 18px",
+                    borderRadius: "10px",
+                    border: isRedzoneTheme
+                      ? "1px solid rgba(255, 220, 220, 0.16)"
+                      : "1px solid rgba(255, 255, 255, 0.15)",
+                    background: isRedzoneTheme ? "#241012" : "#142233",
+                    color: isRedzoneTheme ? "#ffe4e4" : "#dfeeff",
+                    cursor: "pointer",
+                    fontFamily: "monospace",
+                    fontSize: "14px",
+                    boxShadow: "0 0 12px rgba(0,0,0,0.18)",
+                  }}
+                >
+                  {switchButtonLabel}
+                </button>
+              )}
+
               {selectedIntel && (
                 <button
                   onClick={handleReset}
@@ -1085,9 +1386,11 @@ export default function App() {
                     borderRadius: "10px",
                     border: isPoemTheme
                       ? "1px solid rgba(255, 235, 245, 0.22)"
+                      : isRedzoneTheme
+                      ? "1px solid rgba(255, 220, 220, 0.16)"
                       : "1px solid rgba(255, 255, 255, 0.15)",
-                    background: isPoemTheme ? "#63324f" : isRedZoneTheme ? "#3a0c0c" : "#122b1d",
-                    color: isPoemTheme ? "#fff0f8" : isRedZoneTheme ? "#ffd4d4" : "#dfffe8",
+                    background: isPoemTheme ? "#63324f" : isRedzoneTheme ? "#2a1115" : "#122b1d",
+                    color: isPoemTheme ? "#fff0f8" : isRedzoneTheme ? "#ffe9e9" : "#dfffe8",
                     cursor: "pointer",
                     fontFamily: "monospace",
                     fontSize: "14px",
@@ -1106,11 +1409,11 @@ export default function App() {
                   ? "#ff5252"
                   : statusText === "ACCESS DENIED"
                   ? "#ff9494"
-                  : isRedZoneTheme
-                  ? "#ffb8b8"
                   : isPoemTheme
                   ? "#ffe5f3"
-                  : isRedZoneTheme ? "#ffbebe" : "#bcd4ff",
+                  : isRedzoneTheme
+                  ? "#ffcccc"
+                  : "#bcd4ff",
                 fontSize: "14px",
                 textAlign: "center",
                 letterSpacing: "0.5px",
@@ -1119,10 +1422,10 @@ export default function App() {
                 animation: isDenied ? "deniedFlashSoft 0.55s infinite" : "none",
                 textShadow: isDenied
                   ? "0 0 8px rgba(255, 0, 0, 0.25)"
-                  : isRedZoneTheme
-                  ? "0 0 10px rgba(255, 80, 80, 0.18)"
                   : isPoemTheme
                   ? "0 0 10px rgba(255, 215, 235, 0.14)"
+                  : isRedzoneTheme
+                  ? "0 0 10px rgba(255, 90, 90, 0.14)"
                   : "none",
               }}
             >
@@ -1142,13 +1445,15 @@ export default function App() {
                   }}
                 >
                   <img
-                    src={currentTopLogo}
+                    src={topLogoSrc}
                     alt="agency logo"
                     style={{
                       width: "min(160px, 42vw)",
                       marginBottom: "20px",
                       filter: isPoemTheme
                         ? "brightness(1.28) drop-shadow(0 0 14px rgba(255,210,235,0.2))"
+                        : isRedzoneTheme
+                        ? "brightness(1.14) drop-shadow(0 0 14px rgba(255, 90, 90, 0.16))"
                         : "brightness(1.14)",
                     }}
                   />
@@ -1157,14 +1462,16 @@ export default function App() {
                     style={{
                       fontSize: "14px",
                       letterSpacing: "3px",
-                      color: isPoemTheme ? "#ffe6f3" : isRedZoneTheme ? "#ffbebe" : "#bcd4ff",
+                      color: isPoemTheme ? "#ffe6f3" : isRedzoneTheme ? "#ffc7c7" : "#bcd4ff",
                       wordBreak: "break-word",
                       textShadow: isPoemTheme
                         ? "0 0 10px rgba(255, 210, 235, 0.14)"
+                        : isRedzoneTheme
+                        ? "0 0 10px rgba(255, 110, 110, 0.1)"
                         : "none",
                     }}
                   >
-                    뉴 샌디에이고 정보 체계
+                    {bottomLabel}
                   </div>
                 </div>
 
@@ -1174,21 +1481,21 @@ export default function App() {
                     marginTop: "24px",
                     background: isPoemTheme
                       ? "rgba(86, 38, 72, 0.86)"
-                      : isRedZoneTheme
-                      ? "rgba(28, 8, 8, 0.86)"
+                      : isRedzoneTheme
+                      ? "rgba(30, 10, 12, 0.88)"
                       : "rgba(9, 19, 33, 0.84)",
                     border: isPoemTheme
                       ? "1px solid rgba(255, 220, 240, 0.18)"
-                      : isRedZoneTheme
-                      ? "1px solid rgba(255, 120, 120, 0.18)"
+                      : isRedzoneTheme
+                      ? "1px solid rgba(255, 140, 140, 0.16)"
                       : "1px solid rgba(160, 200, 255, 0.16)",
                     borderRadius: "14px",
                     padding: "16px",
                     boxSizing: "border-box",
                     boxShadow: isPoemTheme
                       ? "0 0 24px rgba(255, 180, 220, 0.08)"
-                      : isRedZoneTheme
-                      ? "0 0 24px rgba(110, 0, 0, 0.18)"
+                      : isRedzoneTheme
+                      ? "0 0 24px rgba(120, 10, 18, 0.16)"
                       : "0 0 20px rgba(0, 0, 0, 0.2)",
                   }}
                 >
@@ -1204,12 +1511,12 @@ export default function App() {
                   >
                     <div
                       style={{
-                        color: isPoemTheme ? "#ffd4ea" : isRedZoneTheme ? "#ffb1b1" : "#9ec2ff",
+                        color: isPoemTheme ? "#ffd4ea" : isRedzoneTheme ? "#ffb5b5" : "#9ec2ff",
                         fontSize: "13px",
                         letterSpacing: "1.3px",
                       }}
                     >
-                      RECENT ACCESS LOG
+                      {historyTitle}
                     </div>
 
                     <button
@@ -1220,6 +1527,8 @@ export default function App() {
                         border: "1px solid rgba(255,255,255,0.12)",
                         background: isPoemTheme
                           ? "rgba(120,45,80,0.72)"
+                          : isRedzoneTheme
+                          ? "rgba(96,22,28,0.8)"
                           : "rgba(70,20,20,0.7)",
                         color: isPoemTheme ? "#ffe7f3" : "#ffd0d0",
                         cursor: "pointer",
@@ -1234,7 +1543,7 @@ export default function App() {
                   <div
                     style={{
                       marginBottom: "12px",
-                      color: isPoemTheme ? "#ffe5f3" : isRedZoneTheme ? "#ffbebe" : "#bcd4ff",
+                      color: isPoemTheme ? "#ffe5f3" : isRedzoneTheme ? "#ffd9d9" : "#bcd4ff",
                       fontSize: "12px",
                       letterSpacing: "0.8px",
                       lineHeight: "1.6",
@@ -1243,20 +1552,22 @@ export default function App() {
                     열람한 기록: <span style={{ color: "#ffffff" }}>{history.length}</span>
                     {" / "}
                     현재 존재하는 기록:{" "}
-                    <span style={{ color: isPoemTheme ? "#ffd4ea" : isRedZoneTheme ? "#ffb1b1" : "#9ec2ff" }}>
-                      {normalizedDatabase.length}
+                    <span style={{ color: isPoemTheme ? "#ffd4ea" : isRedzoneTheme ? "#ffb5b5" : "#9ec2ff" }}>
+                      {activeDatabase.length}
                     </span>
                   </div>
 
                   {history.length === 0 ? (
                     <div
                       style={{
-                        color: isPoemTheme ? "#f4d8e8" : isRedZoneTheme ? "#d6a3a3" : "#8ea8cf",
+                        color: isPoemTheme ? "#f4d8e8" : isRedzoneTheme ? "#d7b6b6" : "#8ea8cf",
                         fontSize: "13px",
                         lineHeight: "1.7",
                       }}
                     >
-                      아직 이 기기에서 열람한 문서 기록이 없습니다.
+                      {isRedzoneTheme
+                        ? "아직 이 기기에서 열람한 적경국 문서 기록이 없습니다."
+                        : "아직 이 기기에서 열람한 문서 기록이 없습니다."}
                     </div>
                   ) : (
                     <div
@@ -1274,13 +1585,17 @@ export default function App() {
                             textAlign: "left",
                             background: isPoemTheme
                               ? "rgba(62, 26, 50, 0.94)"
+                              : isRedzoneTheme
+                              ? "rgba(26, 9, 11, 0.94)"
                               : "rgba(6, 14, 26, 0.92)",
                             border: isPoemTheme
                               ? "1px solid rgba(255, 220, 240, 0.14)"
+                              : isRedzoneTheme
+                              ? "1px solid rgba(255, 150, 150, 0.14)"
                               : "1px solid rgba(160, 200, 255, 0.14)",
                             borderRadius: "10px",
                             padding: "12px",
-                            color: isRedZoneTheme ? "#fff0f0" : "#eaf2ff",
+                            color: "#eaf2ff",
                             cursor: "pointer",
                             fontFamily: "monospace",
                           }}
@@ -1304,7 +1619,7 @@ export default function App() {
                             <div
                               style={{
                                 fontSize: "12px",
-                                color: isPoemTheme ? "#f2cbe0" : isRedZoneTheme ? "#d6a3a3" : "#8ea8cf",
+                                color: isPoemTheme ? "#f2cbe0" : isRedzoneTheme ? "#d9aaaa" : "#8ea8cf",
                               }}
                             >
                               {formatOpenedTime(item.openedAt)}
@@ -1315,7 +1630,7 @@ export default function App() {
                             style={{
                               marginTop: "6px",
                               fontSize: "12px",
-                              color: isPoemTheme ? "#ffd4ea" : isRedZoneTheme ? "#ffb1b1" : "#9ec2ff",
+                              color: isPoemTheme ? "#ffd4ea" : isRedzoneTheme ? "#ffb5b5" : "#9ec2ff",
                               letterSpacing: "1px",
                             }}
                           >
@@ -1336,15 +1651,21 @@ export default function App() {
                   width: "100%",
                   background: isPoemTheme
                     ? "rgba(90, 42, 74, 0.9)"
+                    : isRedzoneTheme
+                    ? "rgba(28, 9, 11, 0.92)"
                     : "rgba(9, 19, 33, 0.9)",
                   border: isPoemTheme
                     ? "1px solid rgba(255, 220, 240, 0.22)"
+                    : isRedzoneTheme
+                    ? "1px solid rgba(255, 150, 150, 0.18)"
                     : "1px solid rgba(160, 200, 255, 0.18)",
                   borderRadius: "14px",
                   padding: "18px",
                   boxSizing: "border-box",
                   boxShadow: isPoemTheme
                     ? "0 0 30px rgba(255, 180, 225, 0.1)"
+                    : isRedzoneTheme
+                    ? "0 0 30px rgba(120, 12, 22, 0.18)"
                     : "0 0 24px rgba(0, 0, 0, 0.3)",
                   position: "relative",
                   overflow: "hidden",
@@ -1357,6 +1678,8 @@ export default function App() {
                     pointerEvents: "none",
                     background: isPoemTheme
                       ? "linear-gradient(180deg, rgba(255,255,255,0.03) 0%, transparent 24%, transparent 76%, rgba(255,255,255,0.025) 100%)"
+                      : isRedzoneTheme
+                      ? "linear-gradient(180deg, rgba(255,160,160,0.02) 0%, transparent 24%, transparent 76%, rgba(255,160,160,0.015) 100%)"
                       : "linear-gradient(180deg, rgba(255,255,255,0.012) 0%, transparent 24%, transparent 76%, rgba(255,255,255,0.012) 100%)",
                   }}
                 />
@@ -1377,6 +1700,8 @@ export default function App() {
                       wordBreak: "break-word",
                       textShadow: isPoemTheme
                         ? "0 0 12px rgba(255, 215, 235, 0.14)"
+                        : isRedzoneTheme
+                        ? "0 0 12px rgba(255, 100, 100, 0.1)"
                         : "none",
                     }}
                   >
@@ -1386,7 +1711,7 @@ export default function App() {
                   <p
                     style={{
                       margin: 0,
-                      color: isPoemTheme ? "#ffe6f3" : isRedZoneTheme ? "#ffbebe" : "#bcd4ff",
+                      color: isPoemTheme ? "#ffe6f3" : isRedzoneTheme ? "#ffd1d1" : "#bcd4ff",
                       fontSize: "14px",
                       lineHeight: "1.6",
                       wordBreak: "break-word",
@@ -1417,13 +1742,17 @@ export default function App() {
                       borderRadius: "12px",
                       border: isPoemTheme
                         ? "1px solid rgba(255, 220, 240, 0.26)"
+                        : isRedzoneTheme
+                        ? "1px solid rgba(255, 160, 160, 0.18)"
                         : "1px solid rgba(160, 200, 255, 0.18)",
                       objectFit: "cover",
                       display: "block",
                       boxShadow: isPoemTheme
                         ? "0 0 18px rgba(255, 170, 215, 0.12), 0 0 34px rgba(255, 200, 228, 0.05)"
+                        : isRedzoneTheme
+                        ? "0 0 18px rgba(255, 100, 100, 0.1)"
                         : "none",
-                      filter: isPoemTheme ? "brightness(1.04) saturate(1.08)" : "none",
+                      filter: isPoemTheme ? "brightness(1.04) saturate(1.08)" : isRedzoneTheme ? "brightness(1.02) saturate(1.02)" : "none",
                     }}
                   />
                 </div>
@@ -1432,10 +1761,14 @@ export default function App() {
                   style={{
                     border: isPoemTheme
                       ? "1px solid rgba(255, 220, 240, 0.18)"
+                      : isRedzoneTheme
+                      ? "1px solid rgba(255, 160, 160, 0.15)"
                       : "1px solid rgba(160, 200, 255, 0.15)",
                     borderRadius: "12px",
                     background: isPoemTheme
                       ? "rgba(50, 18, 40, 0.95)"
+                      : isRedzoneTheme
+                      ? "rgba(14, 4, 6, 0.95)"
                       : "rgba(4, 11, 20, 0.95)",
                     padding: "14px",
                     maxHeight: "50vh",
@@ -1448,7 +1781,7 @@ export default function App() {
                 >
                   <div
                     style={{
-                      color: isPoemTheme ? "#ffd4ea" : isRedZoneTheme ? "#ffb7b7" : "#8fb7ff",
+                      color: isPoemTheme ? "#ffd4ea" : isRedzoneTheme ? "#ffb5b5" : "#8fb7ff",
                       fontSize: "12px",
                       marginBottom: "10px",
                       letterSpacing: "1.5px",
@@ -1467,9 +1800,11 @@ export default function App() {
                       maxWidth: "100%",
                       fontSize: "14px",
                       lineHeight: "1.78",
-                      color: isPoemTheme ? "#fff6fb" : isRedZoneTheme ? "#fff0f0" : "#eaf2ff",
+                      color: isPoemTheme ? "#fff6fb" : isRedzoneTheme ? "#fff0f0" : "#eaf2ff",
                       textShadow: isPoemTheme
                         ? "0 0 8px rgba(255, 220, 238, 0.06)"
+                        : isRedzoneTheme
+                        ? "0 0 6px rgba(255, 130, 130, 0.04)"
                         : "0 0 6px rgba(180, 220, 255, 0.03)",
                     }}
                   >
@@ -1498,9 +1833,11 @@ export default function App() {
           position: "absolute",
           inset: 0,
           zIndex: 3,
-          opacity: isPoemTheme ? 0.055 : 0.075,
+          opacity: isPoemTheme ? 0.055 : isRedzoneTheme ? 0.05 : 0.075,
           background: isPoemTheme
             ? "repeating-linear-gradient(to bottom, rgba(255,245,250,0.08) 0px, rgba(255,245,250,0.08) 1px, transparent 2px, transparent 5px)"
+            : isRedzoneTheme
+            ? "repeating-linear-gradient(to bottom, rgba(255,215,215,0.08) 0px, rgba(255,215,215,0.08) 1px, transparent 2px, transparent 5px)"
             : "repeating-linear-gradient(to bottom, rgba(255,255,255,0.1) 0px, rgba(255,255,255,0.1) 1px, transparent 2px, transparent 5px)",
           mixBlendMode: "overlay",
           transition: "opacity 0.35s ease, background 0.35s ease",
@@ -1513,13 +1850,20 @@ export default function App() {
           position: "absolute",
           inset: 0,
           zIndex: 4,
-          opacity: isPoemTheme ? 0.035 : 0.028,
+          opacity: isPoemTheme ? 0.035 : isRedzoneTheme ? 0.03 : 0.028,
           backgroundImage: isPoemTheme
             ? `
               radial-gradient(circle at 20% 20%, rgba(255,255,255,0.12) 0 1px, transparent 1px),
               radial-gradient(circle at 80% 35%, rgba(255,220,238,0.11) 0 1px, transparent 1px),
               radial-gradient(circle at 45% 70%, rgba(255,225,240,0.12) 0 1px, transparent 1px),
               radial-gradient(circle at 65% 85%, rgba(255,210,232,0.08) 0 1px, transparent 1px)
+            `
+            : isRedzoneTheme
+            ? `
+              radial-gradient(circle at 20% 20%, rgba(255,210,210,0.12) 0 1px, transparent 1px),
+              radial-gradient(circle at 80% 35%, rgba(255,150,150,0.08) 0 1px, transparent 1px),
+              radial-gradient(circle at 45% 70%, rgba(255,210,210,0.11) 0 1px, transparent 1px),
+              radial-gradient(circle at 65% 85%, rgba(255,120,120,0.08) 0 1px, transparent 1px)
             `
             : `
               radial-gradient(circle at 20% 20%, rgba(255,255,255,0.12) 0 1px, transparent 1px),
@@ -1541,6 +1885,8 @@ export default function App() {
           zIndex: 1,
           boxShadow: isPoemTheme
             ? "inset 0 0 100px rgba(55, 12, 38, 0.18)"
+            : isRedzoneTheme
+            ? "inset 0 0 120px rgba(40, 0, 0, 0.34)"
             : "inset 0 0 100px rgba(0, 0, 0, 0.28)",
           transition: "box-shadow 0.35s ease",
         }}
@@ -1603,7 +1949,7 @@ export default function App() {
           }
 
           input::placeholder {
-            color: #8ea8cf;
+            color: ${isRedzoneTheme ? "#c99999" : "#8ea8cf"};
           }
 
           button:hover {
@@ -1624,7 +1970,7 @@ export default function App() {
           }
 
           ::-webkit-scrollbar-thumb {
-            background: rgba(160, 200, 255, 0.25);
+            background: ${isRedzoneTheme ? "rgba(255, 150, 150, 0.25)" : "rgba(160, 200, 255, 0.25)"};
             border-radius: 999px;
           }
         `}
