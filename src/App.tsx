@@ -25,6 +25,18 @@ type NormalizedEntry = IntelEntry & {
   normalizedCode: string;
 };
 
+type ProtocolParticle = {
+  id: number;
+  left: number;
+  size: number;
+  duration: number;
+  delay: number;
+  drift: number;
+  opacity: number;
+  blur: number;
+  rotate: number;
+};
+
 const HISTORY_STORAGE_KEYS: Record<SystemMode, string> = {
   intel: "intel_terminal_history_v2",
   redzone: "redzone_terminal_history_v1",
@@ -33,6 +45,9 @@ const HISTORY_STORAGE_KEYS: Record<SystemMode, string> = {
 const MAX_HISTORY = 12;
 const POEM_CODE = "P0EM";
 const REDZONE_GATE_CODE = "R3DZ0NE";
+const A1TO_CODE = "A1TO";
+const PROTOCOL_CODE = "PR0T0C0L";
+const A1TO_WARNING_MESSAGE = `본 문서는 최고 등급의 접근 통제 대상이며, 사전 승인 없이 열람·복제·전달을 시도하는 모든 비인가 인원은 밈적 인자 기반 보안 체계에 의해 즉시 식별 및 추적 대상에 편입됩니다, 해당 인자는 인지 및 정보 접촉 자체를 매개로 작동하도록 설계된 감시·대응 프로토콜의 일부로서, 비인가 접근자는 별도의 경고 절차 없이 자동적으로 제거 대상군으로 분류됩니다, 단, 총국 및 백색궁의 승인 하에 지정된 인원에 한하여 사전 예방 처리—일명 ‘백신화’ 절차—가 적용되며, 해당 인원은 밈적 인자에 의한 인식·추적·제거 과정에서 예외 처리됩니다, 따라서 본 문서의 취급은 반드시 지정된 보안 규격과 승인 절차를 준수해야 하며, 이를 위반할 경우 발생하는 모든 결과에 대한 책임은 전적으로 당사자에게 귀속됩니다.`;
 
 const intelBootLines = [
   "보안성 검토 중...",
@@ -73,6 +88,9 @@ export default function App() {
   const [selectedIntel, setSelectedIntel] = useState<IntelEntry | null>(null);
   const [statusText, setStatusText] = useState("대기 중. 접근 코드를 입력하세요.");
   const [displayedText, setDisplayedText] = useState("");
+  const [isTypingComplete, setIsTypingComplete] = useState(false);
+  const [a1toWarningRevealed, setA1toWarningRevealed] = useState(false);
+  const [protocolTransitionActive, setProtocolTransitionActive] = useState(false);
   const [isDenied, setIsDenied] = useState(false);
   const [glitch, setGlitch] = useState(false);
   const [screenFlicker, setScreenFlicker] = useState(false);
@@ -137,6 +155,20 @@ export default function App() {
   const isRedzoneTheme = themeMode === "redzone";
   const showIntroOverlay = introVisible;
   const showTransitionOverlay = transitionVisible;
+
+  const protocolParticles = useMemo<ProtocolParticle[]>(() => {
+    return Array.from({ length: 22 }, (_, index) => ({
+      id: index,
+      left: 4 + ((index * 37) % 92),
+      size: 12 + (index % 5) * 6 + ((index * 3) % 7),
+      duration: 11 + (index % 6) * 1.8,
+      delay: (index % 7) * 0.55,
+      drift: ((index % 2 === 0 ? 1 : -1) * (10 + (index % 4) * 6)),
+      opacity: 0.14 + (index % 5) * 0.045,
+      blur: index % 4 === 0 ? 1.4 : index % 3 === 0 ? 0.6 : 0,
+      rotate: (index % 2 === 0 ? -1 : 1) * (8 + (index % 5) * 6),
+    }));
+  }, []);
 
   const safePlay = (audio: HTMLAudioElement | null, reset = false) => {
     if (!audio) return;
@@ -365,6 +397,9 @@ export default function App() {
     setPoemPulse(false);
     setPoemSweep(false);
     setDisplayedText("");
+    setIsTypingComplete(false);
+    setA1toWarningRevealed(false);
+    setProtocolTransitionActive(false);
     setSelectedIntel(null);
   };
 
@@ -634,6 +669,7 @@ export default function App() {
 
     if (!selectedIntel) {
       setDisplayedText("");
+      setIsTypingComplete(false);
       return;
     }
 
@@ -643,6 +679,7 @@ export default function App() {
     const isPoem = selectedIntel.code.trim().toUpperCase() === POEM_CODE;
 
     setDisplayedText("");
+    setIsTypingComplete(false);
 
     const poemTargetDuration = 26000;
     const poemStartDelay = 1800;
@@ -654,6 +691,7 @@ export default function App() {
       if (cancelled) return;
 
       if (charIndex >= fullText.length) {
+        setIsTypingComplete(true);
         typingTimeoutRef.current = null;
         return;
       }
@@ -675,6 +713,7 @@ export default function App() {
       }
 
       if (charIndex >= fullText.length) {
+        setIsTypingComplete(true);
         typingTimeoutRef.current = null;
         return;
       }
@@ -726,6 +765,7 @@ export default function App() {
 
     return () => {
       cancelled = true;
+      setIsTypingComplete(false);
       if (typingTimeoutRef.current) {
         window.clearTimeout(typingTimeoutRef.current);
         typingTimeoutRef.current = null;
@@ -794,6 +834,46 @@ export default function App() {
     openDocument(found, systemMode);
   };
 
+  const handleRevealA1toWarning = () => {
+    playClick();
+    setA1toWarningRevealed(true);
+    setStatusText("비정상 프로토콜 경고문이 노출되었습니다.");
+    setGlitch(true);
+    window.setTimeout(() => setGlitch(false), 140);
+  };
+
+  const handleOpenProtocolDocument = () => {
+    playClick();
+
+    const protocolDocument =
+      normalizedDatabase.find((item) => item.normalizedCode === PROTOCOL_CODE) ?? null;
+
+    if (!protocolDocument) {
+      setStatusText("PR0T0C0L 문서를 데이터베이스에서 찾을 수 없습니다.");
+      startDeniedAlarm();
+      return;
+    }
+
+    setProtocolTransitionActive(true);
+    setStatusText("PROTOCOL EXECUTION 연결 중...");
+    setGlitch(true);
+    setScreenFlicker(true);
+
+    window.setTimeout(() => setScreenFlicker(false), 240);
+    window.setTimeout(() => setGlitch(false), 520);
+    window.setTimeout(() => {
+      openDocument(protocolDocument, protocolDocument.classification === "마물" ? "redzone" : "intel");
+    }, 560);
+    window.setTimeout(() => {
+      setProtocolTransitionActive(false);
+    }, 1450);
+  };
+
+  const isA1toDocument =
+    selectedIntel?.code?.trim().toUpperCase() === A1TO_CODE;
+  const isProtocolDocument =
+    selectedIntel?.code?.trim().toUpperCase() === PROTOCOL_CODE;
+  const showA1toSignalButton = isA1toDocument && isTypingComplete && !a1toWarningRevealed;
   const topTitle = isRedzoneTheme
     ? "NEW SAN DIEGO BUREAU OF RED ZONE DEFENSE"
     : "NEW SAN DIEGO INTELLIGENCE AGENCY";
@@ -802,7 +882,9 @@ export default function App() {
   const historyTitle = isRedzoneTheme ? "RED ZONE ACCESS LOG" : "RECENT ACCESS LOG";
   const switchButtonLabel = isRedzoneTheme ? "정보체계로" : "적경국 접속";
 
-  const backgroundStyle = isRedzoneTheme
+  const backgroundStyle = isProtocolDocument
+    ? "linear-gradient(0deg, rgba(255,255,255,0.92) 0%, rgba(214,220,232,0.54) 16%, rgba(52,56,70,0.32) 42%, rgba(10,12,22,0.88) 72%, #020308 100%)"
+    : isRedzoneTheme
     ? "linear-gradient(180deg, #190609 0%, #27090d 18%, #3a0d11 38%, #5a1117 64%, #110204 100%)"
     : isPoemTheme
     ? "linear-gradient(180deg, #35172f 0%, #542445 26%, #7e3b6c 52%, #c26ea1 76%, #ffd2e9 100%)"
@@ -823,7 +905,11 @@ export default function App() {
         boxSizing: "border-box",
         overflow: "hidden",
         transition: "background 1.1s ease, filter 0.35s ease, transform 0.2s ease, padding 0.55s ease",
-        filter: poemPulse
+        filter: protocolTransitionActive
+          ? "brightness(1.55) contrast(1.22) saturate(0.7)"
+          : isProtocolDocument
+          ? "brightness(1.08) contrast(1.08) saturate(0.78)"
+          : poemPulse
           ? "brightness(1.2) saturate(1.2) hue-rotate(-8deg)"
           : isPoemTheme
           ? "brightness(1.06) saturate(1.08)"
@@ -1179,6 +1265,84 @@ export default function App() {
         </div>
       )}
 
+      {(protocolTransitionActive || isProtocolDocument) && (
+        <>
+          <div
+            style={{
+              position: "absolute",
+              inset: 0,
+              pointerEvents: "none",
+              zIndex: 1,
+              opacity: protocolTransitionActive ? 0.9 : 0.42,
+              background: protocolTransitionActive
+                ? "radial-gradient(circle at 50% 54%, rgba(255,255,255,0.96) 0%, rgba(255,255,255,0.72) 22%, rgba(255,255,255,0.28) 48%, rgba(255,255,255,0) 74%)"
+                : "linear-gradient(0deg, rgba(255,255,255,0.35) 0%, rgba(255,255,255,0.16) 12%, rgba(255,255,255,0.06) 26%, rgba(0,0,0,0) 54%)",
+              mixBlendMode: "screen",
+              transition: "opacity 0.45s ease, background 0.45s ease",
+              animation: protocolTransitionActive ? "protocolFlashBurst 0.62s ease-out" : "protocolHaloPulse 4.8s ease-in-out infinite",
+            }}
+          />
+
+          <div
+            style={{
+              position: "absolute",
+              inset: 0,
+              pointerEvents: "none",
+              zIndex: 1,
+              opacity: protocolTransitionActive ? 0.62 : 0.22,
+              background:
+                "repeating-linear-gradient(to bottom, rgba(255,255,255,0.2) 0px, rgba(255,255,255,0.2) 1px, transparent 2px, transparent 5px)",
+              mixBlendMode: "screen",
+              animation: protocolTransitionActive ? "noiseMoveSoft 0.22s linear infinite" : "noiseMoveSoft 2.4s linear infinite",
+            }}
+          />
+
+          <div
+            style={{
+              position: "absolute",
+              inset: 0,
+              pointerEvents: "none",
+              zIndex: 1,
+              opacity: protocolTransitionActive ? 0.55 : 0.18,
+              background:
+                "linear-gradient(180deg, rgba(255,255,255,0.12) 0%, rgba(255,255,255,0.03) 28%, rgba(255,255,255,0.08) 72%, rgba(255,255,255,0.18) 100%)",
+              mixBlendMode: "screen",
+            }}
+          />
+
+          {protocolParticles.map((particle) => (
+            <span
+              key={`protocol-particle-${particle.id}`}
+              style={{
+                position: "absolute",
+                left: `${particle.left}%`,
+                bottom: "-12%",
+                width: `${particle.size * 1.7}px`,
+                height: `${particle.size}px`,
+                pointerEvents: "none",
+                zIndex: 1,
+                opacity: protocolTransitionActive ? Math.min(0.92, particle.opacity + 0.24) : particle.opacity,
+                filter: `blur(${particle.blur}px) drop-shadow(0 0 8px rgba(255,255,255,0.34))`,
+                transform: `rotate(${particle.rotate}deg)`,
+                animation: `protocolFeatherFloat ${particle.duration}s ease-in-out ${particle.delay}s infinite`,
+              }}
+            >
+              <span
+                style={{
+                  display: "block",
+                  width: "100%",
+                  height: "100%",
+                  borderRadius: "100% 0 100% 0 / 85% 0 100% 15%",
+                  background:
+                    "linear-gradient(135deg, rgba(255,255,255,0.96) 0%, rgba(246,248,255,0.82) 26%, rgba(228,234,245,0.42) 62%, rgba(255,255,255,0) 100%)",
+                  boxShadow: "0 0 12px rgba(255,255,255,0.18)",
+                }}
+              />
+            </span>
+          ))}
+        </>
+      )}
+
       <div
         style={{
           position: "absolute",
@@ -1248,7 +1412,9 @@ export default function App() {
           display: "flex",
           flexDirection: "column",
           alignItems: "center",
-          transform: glitch ? `translateX(1px) ${poemPulse ? "skewX(-0.5deg)" : ""}` : poemPulse ? "translateY(-1px)" : "none",
+          transform: protocolTransitionActive
+            ? "scale(1.02) skewX(-1.2deg) translateX(2px)"
+            : glitch ? `translateX(1px) ${poemPulse ? "skewX(-0.5deg)" : ""}` : poemPulse ? "translateY(-1px)" : "none",
           filter: glitch
             ? isPoemTheme
               ? "contrast(1.08) brightness(1.07) saturate(1.1)"
@@ -1653,12 +1819,16 @@ export default function App() {
                 style={{
                   marginTop: "26px",
                   width: "100%",
-                  background: isPoemTheme
+                  background: isProtocolDocument
+                    ? "rgba(9, 12, 20, 0.72)"
+                    : isPoemTheme
                     ? "rgba(90, 42, 74, 0.9)"
                     : isRedzoneTheme
                     ? "rgba(28, 9, 11, 0.92)"
                     : "rgba(9, 19, 33, 0.9)",
-                  border: isPoemTheme
+                  border: isProtocolDocument
+                    ? "1px solid rgba(255, 255, 255, 0.34)"
+                    : isPoemTheme
                     ? "1px solid rgba(255, 220, 240, 0.22)"
                     : isRedzoneTheme
                     ? "1px solid rgba(255, 150, 150, 0.18)"
@@ -1666,7 +1836,9 @@ export default function App() {
                   borderRadius: "14px",
                   padding: "18px",
                   boxSizing: "border-box",
-                  boxShadow: isPoemTheme
+                  boxShadow: isProtocolDocument
+                    ? "0 0 40px rgba(255, 255, 255, 0.14), 0 0 70px rgba(255, 255, 255, 0.05)"
+                    : isPoemTheme
                     ? "0 0 30px rgba(255, 180, 225, 0.1)"
                     : isRedzoneTheme
                     ? "0 0 30px rgba(120, 12, 22, 0.18)"
@@ -1680,7 +1852,9 @@ export default function App() {
                     position: "absolute",
                     inset: 0,
                     pointerEvents: "none",
-                    background: isPoemTheme
+                    background: isProtocolDocument
+                      ? "linear-gradient(180deg, rgba(255,255,255,0.12) 0%, rgba(255,255,255,0.03) 22%, transparent 58%, rgba(255,255,255,0.08) 100%)"
+                      : isPoemTheme
                       ? "linear-gradient(180deg, rgba(255,255,255,0.03) 0%, transparent 24%, transparent 76%, rgba(255,255,255,0.025) 100%)"
                       : isRedzoneTheme
                       ? "linear-gradient(180deg, rgba(255,160,160,0.02) 0%, transparent 24%, transparent 76%, rgba(255,160,160,0.015) 100%)"
@@ -1702,7 +1876,9 @@ export default function App() {
                       fontSize: "clamp(20px, 4.5vw, 28px)",
                       color: "#ffffff",
                       wordBreak: "break-word",
-                      textShadow: isPoemTheme
+                      textShadow: isProtocolDocument
+                        ? "0 0 14px rgba(255, 255, 255, 0.28)"
+                        : isPoemTheme
                         ? "0 0 12px rgba(255, 215, 235, 0.14)"
                         : isRedzoneTheme
                         ? "0 0 12px rgba(255, 100, 100, 0.1)"
@@ -1715,7 +1891,7 @@ export default function App() {
                   <p
                     style={{
                       margin: 0,
-                      color: isPoemTheme ? "#ffe6f3" : isRedzoneTheme ? "#ffd1d1" : "#bcd4ff",
+                      color: isProtocolDocument ? "#f5f8ff" : isPoemTheme ? "#ffe6f3" : isRedzoneTheme ? "#ffd1d1" : "#bcd4ff",
                       fontSize: "14px",
                       lineHeight: "1.6",
                       wordBreak: "break-word",
@@ -1744,32 +1920,40 @@ export default function App() {
                       width: "100%",
                       maxWidth: "320px",
                       borderRadius: "12px",
-                      border: isPoemTheme
+                      border: isProtocolDocument
+                        ? "1px solid rgba(255, 255, 255, 0.28)"
+                        : isPoemTheme
                         ? "1px solid rgba(255, 220, 240, 0.26)"
                         : isRedzoneTheme
                         ? "1px solid rgba(255, 160, 160, 0.18)"
                         : "1px solid rgba(160, 200, 255, 0.18)",
                       objectFit: "cover",
                       display: "block",
-                      boxShadow: isPoemTheme
+                      boxShadow: isProtocolDocument
+                        ? "0 0 24px rgba(255, 255, 255, 0.18), 0 0 42px rgba(255, 255, 255, 0.06)"
+                        : isPoemTheme
                         ? "0 0 18px rgba(255, 170, 215, 0.12), 0 0 34px rgba(255, 200, 228, 0.05)"
                         : isRedzoneTheme
                         ? "0 0 18px rgba(255, 100, 100, 0.1)"
                         : "none",
-                      filter: isPoemTheme ? "brightness(1.04) saturate(1.08)" : isRedzoneTheme ? "brightness(1.02) saturate(1.02)" : "none",
+                      filter: isProtocolDocument ? "brightness(1.08) contrast(1.08) saturate(0.72)" : isPoemTheme ? "brightness(1.04) saturate(1.08)" : isRedzoneTheme ? "brightness(1.02) saturate(1.02)" : "none",
                     }}
                   />
                 </div>
 
                 <div
                   style={{
-                    border: isPoemTheme
+                    border: isProtocolDocument
+                      ? "1px solid rgba(255, 255, 255, 0.24)"
+                      : isPoemTheme
                       ? "1px solid rgba(255, 220, 240, 0.18)"
                       : isRedzoneTheme
                       ? "1px solid rgba(255, 160, 160, 0.15)"
                       : "1px solid rgba(160, 200, 255, 0.15)",
                     borderRadius: "12px",
-                    background: isPoemTheme
+                    background: isProtocolDocument
+                      ? "rgba(4, 8, 16, 0.74)"
+                      : isPoemTheme
                       ? "rgba(50, 18, 40, 0.95)"
                       : isRedzoneTheme
                       ? "rgba(14, 4, 6, 0.95)"
@@ -1785,7 +1969,7 @@ export default function App() {
                 >
                   <div
                     style={{
-                      color: isPoemTheme ? "#ffd4ea" : isRedzoneTheme ? "#ffb5b5" : "#8fb7ff",
+                      color: isProtocolDocument ? "#f7fbff" : isPoemTheme ? "#ffd4ea" : isRedzoneTheme ? "#ffb5b5" : "#8fb7ff",
                       fontSize: "12px",
                       marginBottom: "10px",
                       letterSpacing: "1.5px",
@@ -1804,8 +1988,10 @@ export default function App() {
                       maxWidth: "100%",
                       fontSize: "14px",
                       lineHeight: "1.78",
-                      color: isPoemTheme ? "#fff6fb" : isRedzoneTheme ? "#fff0f0" : "#eaf2ff",
-                      textShadow: isPoemTheme
+                      color: isProtocolDocument ? "#ffffff" : isPoemTheme ? "#fff6fb" : isRedzoneTheme ? "#fff0f0" : "#eaf2ff",
+                      textShadow: isProtocolDocument
+                        ? "0 0 10px rgba(255, 255, 255, 0.1)"
+                        : isPoemTheme
                         ? "0 0 8px rgba(255, 220, 238, 0.06)"
                         : isRedzoneTheme
                         ? "0 0 6px rgba(255, 130, 130, 0.04)"
@@ -1824,6 +2010,127 @@ export default function App() {
                       █
                     </span>
                   </pre>
+
+                  {showA1toSignalButton && (
+                    <div
+                      style={{
+                        marginTop: "18px",
+                        display: "flex",
+                        justifyContent: "center",
+                      }}
+                    >
+                      <button
+                        onClick={handleRevealA1toWarning}
+                        style={{
+                          position: "relative",
+                          width: "100%",
+                          maxWidth: "300px",
+                          padding: "12px 16px",
+                          borderRadius: "10px",
+                          border: "1px solid rgba(255, 120, 120, 0.18)",
+                          background:
+                            "linear-gradient(180deg, rgba(22, 22, 28, 0.96) 0%, rgba(10, 10, 14, 0.98) 100%)",
+                          color: "#ffd8d8",
+                          cursor: "pointer",
+                          fontFamily: "monospace",
+                          fontSize: "12px",
+                          letterSpacing: "2px",
+                          boxShadow: "0 0 18px rgba(255, 80, 80, 0.08)",
+                          animation: "protocolSignalGlitch 1.2s steps(2, end) infinite",
+                          overflow: "hidden",
+                        }}
+                      >
+                        <span
+                          style={{
+                            position: "absolute",
+                            inset: 0,
+                            background:
+                              "repeating-linear-gradient(to bottom, rgba(255,255,255,0.07) 0px, rgba(255,255,255,0.07) 1px, transparent 2px, transparent 5px)",
+                            opacity: 0.18,
+                            pointerEvents: "none",
+                          }}
+                        />
+                        <span
+                          style={{
+                            position: "absolute",
+                            top: 0,
+                            bottom: 0,
+                            width: "44%",
+                            background:
+                              "linear-gradient(90deg, rgba(255,255,255,0) 0%, rgba(255,255,255,0.22) 50%, rgba(255,255,255,0) 100%)",
+                            mixBlendMode: "screen",
+                            animation: "protocolSignalSweep 1.8s linear infinite",
+                            pointerEvents: "none",
+                          }}
+                        />
+                        <span style={{ position: "relative", zIndex: 1 }}>
+                          ▒ 비인가 신호 감지 ▒
+                        </span>
+                      </button>
+                    </div>
+                  )}
+
+                  {isA1toDocument && a1toWarningRevealed && (
+                    <div
+                      style={{
+                        marginTop: "18px",
+                        borderRadius: "12px",
+                        border: "1px solid rgba(255, 110, 110, 0.22)",
+                        background: "rgba(30, 7, 10, 0.96)",
+                        padding: "16px",
+                        boxShadow: "0 0 20px rgba(255, 70, 70, 0.1)",
+                      }}
+                    >
+                      <div
+                        style={{
+                          color: "#ffb0b0",
+                          fontSize: "12px",
+                          letterSpacing: "2px",
+                          marginBottom: "10px",
+                        }}
+                      >
+                        WARNING MESSAGE
+                      </div>
+
+                      <div
+                        style={{
+                          color: "#fff0f0",
+                          fontSize: "13px",
+                          lineHeight: "1.8",
+                          whiteSpace: "pre-wrap",
+                          wordBreak: "break-word",
+                        }}
+                      >
+  {A1TO_WARNING_MESSAGE}
+</div>
+
+                      <div
+                        style={{
+                          marginTop: "14px",
+                          display: "flex",
+                          justifyContent: "flex-end",
+                        }}
+                      >
+                        <button
+                          onClick={handleOpenProtocolDocument}
+                          style={{
+                            padding: "10px 16px",
+                            borderRadius: "10px",
+                            border: "1px solid rgba(255, 140, 140, 0.24)",
+                            background: "#4a0f15",
+                            color: "#ffe3e3",
+                            cursor: "pointer",
+                            fontFamily: "monospace",
+                            fontSize: "13px",
+                            letterSpacing: "1px",
+                            boxShadow: "0 0 14px rgba(255, 80, 80, 0.08)",
+                          }}
+                        >
+                          접속
+                        </button>
+                      </div>
+                    </div>
+                  )}
                 </div>
               </div>
             )}
@@ -1941,6 +2248,42 @@ export default function App() {
               transform: translateX(-300px);
               opacity: 0;
             }
+          }
+
+          @keyframes protocolSignalGlitch {
+            0%, 100% { opacity: 0.96; transform: translateX(0); }
+            10% { opacity: 0.54; transform: translateX(-1px); }
+            18% { opacity: 1; transform: translateX(1px); }
+            26% { opacity: 0.68; transform: translateX(-2px); }
+            34% { opacity: 0.92; transform: translateX(0); }
+            52% { opacity: 0.58; transform: translateX(2px); }
+            60% { opacity: 1; transform: translateX(-1px); }
+            74% { opacity: 0.72; transform: translateX(1px); }
+          }
+
+          @keyframes protocolSignalSweep {
+            0% { transform: translateX(-160%) skewX(-16deg); opacity: 0; }
+            18% { opacity: 0.8; }
+            100% { transform: translateX(320%) skewX(-16deg); opacity: 0; }
+          }
+
+          @keyframes protocolFlashBurst {
+            0% { opacity: 0; transform: scale(0.96); }
+            22% { opacity: 1; transform: scale(1.02); }
+            100% { opacity: 0; transform: scale(1.08); }
+          }
+
+          @keyframes protocolHaloPulse {
+            0%, 100% { opacity: 0.28; transform: scale(1); }
+            50% { opacity: 0.5; transform: scale(1.04); }
+          }
+
+          @keyframes protocolFeatherFloat {
+            0% { transform: translate3d(0, 0, 0) rotate(-10deg) scale(0.88); opacity: 0; }
+            10% { opacity: 1; }
+            45% { transform: translate3d(-10px, -28vh, 0) rotate(2deg) scale(1); }
+            75% { transform: translate3d(12px, -62vh, 0) rotate(10deg) scale(1.04); opacity: 0.78; }
+            100% { transform: translate3d(-6px, -112vh, 0) rotate(18deg) scale(0.92); opacity: 0; }
           }
 
           body {
